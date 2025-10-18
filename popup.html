@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Wplace_Map_Inspector</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h3>Wplace_Map_Inspector</h3>
+
+    <div class="grid">
+      <label>start Tl X<input id="startBlockX" type="number" value="1677"></label>
+      <label>start Tl Y<input id="startBlockY" type="number" value="888"></label>
+      <label>start Px X<input id="startX" type="number" value="165"></label>
+      <label>start Px Y<input id="startY" type="number" value="942"></label>
+
+      <label>end Tl X<input id="endBlockX" type="number" value="1677"></label>
+      <label>end Tl Y<input id="endBlockY" type="number" value="888"></label>
+      <label>end Px X<input id="endX" type="number" value="167"></label>
+      <label>end Px Y<input id="endY" type="number" value="945"></label>
+
+      <label>step X<input id="stepX" type="number" value="1" min="1"></label>
+      <label>step Y<input id="stepY" type="number" value="1" min="1"></label>
+      <!-- Advanced settings -->
+      <div style="margin-top:8px;border-top:1px solid #eee;padding-top:8px;">
+  <button id="advToggle" type="button" style="padding:4px 8px;font-size:13px;">Show advanced ▾</button>
+  <div id="advBody" style="margin-top:8px;display:none;">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
+      <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
+      <label>BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="可留空使用默认" style="width:100%"></label>
+    </div>
+  </div>
+</div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="clearBtn">Clear Log</button>
+    </div>
+
+    <div id="log" class="log" aria-live="polite"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

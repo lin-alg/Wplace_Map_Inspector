@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>JSONL → XLSX</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding:16px; color:#222 }
+    textarea { width:100%; height:200px; font-family: monospace; font-size:13px; box-sizing:border-box; }
+    .row { display:flex; gap:8px; align-items:center; margin-top:8px; }
+    button, select { padding:6px 10px; font-size:13px; }
+    pre { white-space: pre-wrap; background:#f7f7f7; padding:8px; max-height:260px; overflow:auto; margin-top:8px; }
+    h1 { font-size:16px; margin:0; display:inline-block; }
+    .meta { color:#555; font-size:13px; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1 id="title">Paste JSONL and download XLSX</h1>
+    <div>
+      <label for="lang">Language</label>
+      <select id="lang"><option value="en">English</option><option value="zh">中文</option></select>
+    </div>
+  </div>
+
+  <div class="meta" id="hint">Paste one JSON object per line, then click Parse and Download.</div>
+
+  <textarea id="raw" placeholder="one JSON per line"></textarea>
+
+  <div class="row">
+    <button id="go">Parse</button>
+    <button id="dl">Download XLSX</button>
+    <button id="clear">Clear</button>
+    <div style="margin-left:auto;color:#666;font-size:13px;" id="status"></div>
+  </div>
+
+  <pre id="out"></pre>
+
+  <!-- SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+  (function () {
+    const L = {
+      en: {
+        title: 'Paste JSONL and download XLSX',
+        hint: 'Paste one JSON object per line, then click Parse and Download.',
+        placeholder: 'one JSON per line',
+        go: 'Parse',
+        dl: 'Download XLSX',
+        clear: 'Clear',
+        previewLabel: 'Preview of parsed rows:',
+        noRows: 'No valid rows parsed.',
+        parseFirst: 'Please parse data first.',
+        libMissing: 'XLSX library not loaded.',
+        downloadPrefix: 'wplace_parsed_',
+        statusReady: 'Ready'
+      },
+      zh: {
+        title: '粘贴 JSONL 并下载 XLSX',
+        hint: '每行一个 JSON 对象，点击 解析 后下载 XLSX。',
+        placeholder: '每行一个 JSON',
+        go: '解析',
+        dl: '下载 XLSX',
+        clear: '清空',
+        previewLabel: '解析结果预览：',
+        noRows: '未解析到有效数据。',
+        parseFirst: '请先解析数据。',
+        libMissing: '未加载 XLSX 库。',
+        downloadPrefix: 'wplace_parsed_',
+        statusReady: '就绪'
+      }
+    };
+
+    const el = {
+      lang: document.getElementById('lang'),
+      title: document.getElementById('title'),
+      hint: document.getElementById('hint'),
+      raw: document.getElementById('raw'),
+      go: document.getElementById('go'),
+      dl: document.getElementById('dl'),
+      clear: document.getElementById('clear'),
+      out: document.getElementById('out'),
+      status: document.getElementById('status')
+    };
+
+    function getLang() {
+      try { return localStorage.getItem('pxf_lang') || 'en'; } catch { return 'en'; }
+    }
+    function setLang(v) {
+      try { localStorage.setItem('pxf_lang', v); } catch {}
+      applyLang(v);
+    }
+    function applyLang(v) {
+      const s = L[v] || L.en;
+      document.documentElement.lang = v === 'zh' ? 'zh-CN' : 'en';
+      el.title.textContent = s.title;
+      el.hint.textContent = s.hint;
+      el.raw.placeholder = s.placeholder;
+      el.go.textContent = s.go;
+      el.dl.textContent = s.dl;
+      el.clear.textContent = s.clear;
+      el.status.textContent = s.statusReady;
+    }
+
+    el.lang.value = getLang();
+    applyLang(el.lang.value);
+    el.lang.addEventListener('change', () => setLang(el.lang.value));
+
+    // parse lines -> rows, dedupe by paintedBy.id
+    function buildRows(lines) {
+      const rows = [];
+      const seen = new Set();
+      for (const ln of lines) {
+        try {
+          const obj = JSON.parse(ln);
+          const pb = obj.paintedBy || {};
+          const id = pb.id != null ? String(pb.id) : '';
+          if (id && seen.has(id)) continue;
+          if (id) seen.add(id);
+          rows.push({
+            blockX: obj.blockX ?? obj.blockB ?? '',
+            blockB: obj.blockB ?? obj.blockY ?? '',
+            x: obj.x ?? '',
+            y: obj.y ?? '',
+            id: id,
+            name: pb.name ?? '',
+            allianceId: pb.allianceId ?? '',
+            allianceName: pb.allianceName ?? '',
+            equippedFlag: pb.equippedFlag ?? ''
+          });
+        } catch (e) {
+          // skip invalid line
+        }
+      }
+      return rows;
+    }
+
+    el.go.addEventListener('click', () => {
+      const lines = el.raw.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const rows = buildRows(lines);
+      window._parsed = rows;
+      const lang = el.lang.value;
+      if (!rows.length) {
+        el.out.textContent = L[lang].noRows;
+        alert(L[lang].noRows);
+        return;
+      }
+      el.out.textContent = JSON.stringify(rows, null, 2);
+      el.status.textContent = `${rows.length} rows`;
+    });
+
+    el.clear.addEventListener('click', () => {
+      el.raw.value = '';
+      el.out.textContent = '';
+      window._parsed = [];
+      el.status.textContent = L[el.lang.value].statusReady;
+    });
+
+    el.dl.addEventListener('click', () => {
+      const rows = window._parsed || [];
+      const lang = el.lang.value;
+      if (!rows.length) { alert(L[lang].parseFirst); return; }
+      if (typeof XLSX === 'undefined') { alert(L[lang].libMissing); return; }
+      const headers = ['blockX','blockB','x','y','id','name','allianceId','allianceName','equippedFlag'];
+      const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+      ws['!cols'] = [{wch:8},{wch:8},{wch:6},{wch:6},{wch:12},{wch:18},{wch:10},{wch:18},{wch:10}];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${L[lang].downloadPrefix}${Date.now()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // set initial status
+    el.status.textContent = L[el.lang.value].statusReady;
+  })();
+  </script>
+</body>
+</html>

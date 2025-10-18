@@ -1,0 +1,46 @@
+/* popup.css */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  margin: 0;
+  padding: 12px;
+  width: 420px;
+  box-sizing: border-box;
+  color: #111;
+}
+.wrap h3 { margin: 0 0 8px 0; font-size: 16px; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+label { font-size: 12px; display: flex; flex-direction: column; }
+input[type="number"], input[type="text"] {
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.controls { display:flex; gap:8px; margin-bottom:8px; }
+button {
+  padding:6px 10px;
+  font-size:13px;
+  border-radius:6px;
+  border:1px solid #ccc;
+  background:#f5f5f5;
+  cursor:pointer;
+}
+button:disabled { opacity:0.5; cursor:not-allowed; }
+.log {
+  height:220px;
+  overflow:auto;
+  background:#111;
+  color:#d6ffd6;
+  padding:8px;
+  font-family: monospace;
+  font-size:12px;
+  border-radius:6px;
+}
+.log .info { color:#9fd5ff; }
+.log .warn { color:#ffd39f; }
+.log .error { color:#ffb4b4; }
