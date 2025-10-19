@@ -10,20 +10,18 @@
     "default_title": "Wplace_Map_Inspector",
     "default_popup": "popup.html"
   },
-  "permissions": [
-    "activeTab",
-    "scripting"
-  ],
+  "permissions": ["activeTab","scripting","storage"],
   "host_permissions": [
   "https://*.wplace.live/*",
   "http://*.wplace.live/*"
     ],
   "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["main.js"],
-      "run_at": "document_idle"
-    }
+  {
+    "matches": ["https://*.wplace.live/*"],
+    "js": ["main.js"],
+    "run_at": "document_idle",
+    "all_frames": true
+  }
   ]
 }
 

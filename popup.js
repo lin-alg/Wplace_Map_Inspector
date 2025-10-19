@@ -1,5 +1,4 @@
-// popup.js - Cross-browser compatible version (storage falls back to localStorage)
-// Goal: Work on Chrome/Edge/Firefox. Prefer scripting.executeScript, fall back to tabs.executeScript, then messaging.
+// popup.js - full file with run-state UI sync, robust messaging for Edge/Chromium, stop support using localStorage + postMessage
 
 /* ---- API wrapper ---- */
 const api = (function() {
@@ -21,7 +20,7 @@ const api = (function() {
       try {
         raw.tabs.sendMessage(tabId, msg, resp => {
           const err = raw.runtime && raw.runtime.lastError;
-          if (err) resolve({ ok: false, error: err.message });
+          if (err) resolve({ ok: false, error: err.message || String(err) });
           else resolve({ ok: true, resp });
         });
       } catch (e) { resolve({ ok: false, error: String(e) }); }
@@ -42,7 +41,8 @@ const api = (function() {
               } catch (e) { resolve(undefined); }
               return;
             }
-            resolve(res ? res[key] : undefined);
+            if (res && res[key] !== undefined) resolve(res[key]);
+            else resolve(res);
           });
         });
       }
@@ -131,6 +131,36 @@ const api = (function() {
   };
 })();
 
+/* ---- Robust messaging helper (ensure content script) ---- */
+async function ensureContentScriptAndSend(tabId, msg) {
+  let res = await api.sendMessageToTab(tabId, msg);
+  if (res && res.ok) return res;
+
+  try {
+    const raw = api.raw;
+    if (raw && raw.scripting && raw.scripting.executeScript) {
+      await new Promise((resolve, reject) => {
+        raw.scripting.executeScript({ target: { tabId }, files: ['main.js'] }, () => {
+          const err = raw.runtime && raw.runtime.lastError;
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+    } else if (raw && raw.tabs && raw.tabs.executeScript) {
+      await new Promise((resolve) => {
+        try {
+          raw.tabs.executeScript(tabId, { code: 'void 0;' }, () => { setTimeout(resolve, 80); });
+        } catch (e) { setTimeout(resolve, 80); }
+      });
+    }
+    await new Promise(r => setTimeout(r, 150));
+    res = await api.sendMessageToTab(tabId, msg);
+    return res;
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 /* ---- UI bindings & helpers ---- */
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -153,7 +183,11 @@ const inputs = {
   BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE')
 };
 
+const conservativeCheckbox = document.getElementById('conservative');
+
 const SETTINGS_KEY = 'pxf_settings';
+const RUN_STATE_KEY = '__PXF_RUNNING__';
+const STOP_FLAG_KEY = '__PIXEL_FETCHER_STOP__';
 let saveTimer = null;
 
 function log(type, text, extra) {
@@ -172,9 +206,20 @@ function log(type, text, extra) {
   else console.log(text, extra || '');
 }
 
+// helper: set UI button states for running vs idle
+function setRunningUI(isRunning) {
+  if (isRunning) {
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+  } else {
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+}
+
 /* Settings helpers */
 function collectSettingsFromUI() {
-  return {
+  const rawCfg = {
     startBlockX: Number(inputs.startBlockX.value || 0),
     startBlockY: Number(inputs.startBlockY.value || 0),
     startX: Number(inputs.startX.value || 0),
@@ -189,6 +234,14 @@ function collectSettingsFromUI() {
     MAX_RPS: Number(inputs.MAX_RPS.value || 6),
     BASE_TEMPLATE: (inputs.BASE_TEMPLATE.value || '').trim()
   };
+
+  if (conservativeCheckbox && conservativeCheckbox.checked) {
+    rawCfg.CONCURRENCY = 1;
+    rawCfg.MAX_RPS = 1;
+    rawCfg.BATCH_PAUSE_MS = Math.max(800, rawCfg.BATCH_PAUSE_MS || 800);
+  }
+
+  return rawCfg;
 }
 
 function applySettingsToUI(cfg) {
@@ -215,19 +268,145 @@ async function loadSettings() {
   if (cfg) { applySettingsToUI(cfg); log('info', 'Loaded saved settings'); }
 }
 
-/* Bind inputs */
 Object.values(inputs).forEach(el => { if (!el) return; el.addEventListener('input', scheduleSaveSettings); });
 clearBtn.addEventListener('click', () => { if (logEl) logEl.innerHTML = ''; });
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const toggle = document.getElementById('advToggle');
+  const body = document.getElementById('advBody');
+  if (toggle && body) {
+    toggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isOpen = body.style.display !== 'none';
+      if (isOpen) {
+        body.style.display = 'none';
+        toggle.innerText = 'Show advanced ▾';
+      } else {
+        body.style.display = 'block';
+        toggle.innerText = 'Hide advanced ▴';
+      }
+    });
+  }
+
+  await loadSettings();
+
+  const tab = await api.queryActiveTab();
+  if (!tab || !tab.id) {
+    setRunningUI(false);
+    return;
+  }
+
+  // Attempt to get recent events from content script (inject if necessary)
+  let arr = [];
+  try {
+    const evRes = await ensureContentScriptAndSend(tab.id, { type: 'get-recent-events' });
+    if (evRes && evRes.ok && evRes.resp && Array.isArray(evRes.resp.recent)) arr = evRes.resp.recent;
+  } catch (e) { arr = []; }
+
+  // Fallback to storage for recent events if none
+  if (!arr || !arr.length) {
+    try {
+      const storedRaw = await api.storageGet('__PIXEL_FETCHER_RECENT__');
+      let stored = null;
+      if (!storedRaw) stored = null;
+      else if (Array.isArray(storedRaw)) stored = storedRaw;
+      else if (storedRaw.__PIXEL_FETCHER_RECENT__ && Array.isArray(storedRaw.__PIXEL_FETCHER_RECENT__)) stored = storedRaw.__PIXEL_FETCHER_RECENT__;
+      else stored = storedRaw;
+      if (Array.isArray(stored)) arr = stored;
+    } catch (e) { arr = arr || []; }
+  }
+
+  if (arr && arr.length) {
+    const seen = new Set();
+    arr.forEach(ev => {
+      const p = ev.payload || {};
+      const key = (ev.time ? String(ev.time) : '') + '|' + (p.evt || '') + '|' + (p.text || '');
+      if (seen.has(key)) return;
+      seen.add(key);
+      log('info', (p.evt || 'evt') + ' ' + (p.text || ''), p);
+    });
+  }
+
+  // Check persisted run state and set UI accordingly
+  try {
+    const runStateRaw = await api.storageGet(RUN_STATE_KEY);
+    let runState = null;
+    if (!runStateRaw) runState = null;
+    else if (runStateRaw.__PXF_RUNNING__) runState = runStateRaw.__PXF_RUNNING__;
+    else runState = runStateRaw;
+
+    if (runState && runState.running) {
+      log('info', '检测到运行态，恢复 Stop 可用', { startedAt: runState.startedAt, cfg: runState.cfg });
+      setRunningUI(true);
+    } else {
+      setRunningUI(false);
+    }
+  } catch (e) {
+    setRunningUI(false);
+  }
+
+  // start short polling to show new events while popup is open
+  let pollTimer = null;
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(async () => {
+      const evRes2 = await ensureContentScriptAndSend(tab.id, { type: 'get-recent-events' });
+      if (!evRes2 || !evRes2.ok) return;
+      const arr2 = evRes2.resp && evRes2.resp.recent;
+      if (!arr2 || !arr2.length) return;
+      arr2.forEach(ev => {
+        const p = ev.payload || {};
+        const key = (ev.time ? String(ev.time) : '') + '|' + (p.evt || '') + '|' + (p.text || '');
+        if (!key) return;
+        if (!pollSeen.has(key)) {
+          pollSeen.add(key);
+          log('info', (p.evt || 'evt') + ' ' + (p.text || ''), p);
+          if (p.evt === 'done' || (p.evt === 'run-state' && p.running === false)) {
+            setRunningUI(false);
+            try { api.storageSet(RUN_STATE_KEY, null); } catch (e) {}
+            try { api.storageSet(STOP_FLAG_KEY, null); } catch (e) {}
+          }
+        }
+      });
+    }, 1200);
+  }
+  const pollSeen = new Set();
+  startPolling();
+  window.addEventListener('unload', () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } });
+});
+
+/* Utility: estimate total sample count from settings */
+function estimateCountFromCfg(cfg) {
+  const BLOCK_SIZE = 1000;
+  const g1x = (cfg.startBlockX || 0) * BLOCK_SIZE + (cfg.startX || 0);
+  const g1y = (cfg.startBlockY || 0) * BLOCK_SIZE + (cfg.startY || 0);
+  const g2x = (cfg.endBlockX || cfg.startBlockX || 0) * BLOCK_SIZE + (cfg.endX || cfg.startX || 0);
+  const g2y = (cfg.endBlockY || cfg.startBlockY || 0) * BLOCK_SIZE + (cfg.endY || cfg.startY || 0);
+  const minGX = Math.min(g1x, g2x), maxGX = Math.max(g1x, g2x);
+  const minGY = Math.min(g1y, g2y), maxGY = Math.max(g1y, g2y);
+  const stepX = Math.max(1, Number(cfg.stepX || 1));
+  const stepY = Math.max(1, Number(cfg.stepY || 1));
+  const countX = Math.floor((maxGX - minGX) / stepX) + 1;
+  const countY = Math.floor((maxGY - minGY) / stepY) + 1;
+  return Math.max(0, countX * countY);
+}
 
 /* Stop (best-effort): tell content script to stop if it exists */
 stopBtn.addEventListener('click', async () => {
   stopBtn.disabled = true;
   const tab = await api.queryActiveTab();
   if (!tab || !tab.id) { log('error', 'Active tab not found'); stopBtn.disabled = false; return; }
-  const res = await api.sendMessageToTab(tab.id, { type: 'stop-script' });
-  if (!res.ok) log('warn', 'Failed to send stop command', res.error);
-  else log('info', 'Stop command sent', res.resp);
-  startBtn.disabled = false; stopBtn.disabled = true;
+  // send stop message to content script; it will write localStorage stop flag too
+  const res = await ensureContentScriptAndSend(tab.id, { type: 'stop-script' });
+  if (!res.ok) {
+    log('warn', 'Failed to send stop command', res.error);
+    setRunningUI(false);
+  } else {
+    log('info', 'Stop command sent', res.resp);
+    try { await api.storageSet(RUN_STATE_KEY, null); } catch (e) {}
+    try { await api.storageSet(STOP_FLAG_KEY, null); } catch (e) {}
+    setRunningUI(false);
+  }
 });
 
 /* Start: try execScript, otherwise fall back to content script messaging */
@@ -235,65 +414,113 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true; stopBtn.disabled = false;
   await saveSettings();
   const cfg = collectSettingsFromUI();
-  log('info', 'Starting job', { summary: `blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}` });
+  const estimated = estimateCountFromCfg(cfg);
+  log('info', 'Starting job', { summary: `blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`, estimatedCount: estimated });
 
   const tab = await api.queryActiveTab();
-  if (!tab || !tab.id) { log('error', 'Active tab not found'); startBtn.disabled = false; stopBtn.disabled = true; return; }
+  if (!tab || !tab.id) { log('error', 'Active tab not found'); setRunningUI(false); return; }
+
+  const LARGE_THRESHOLD = 20000;
+  if (estimated > LARGE_THRESHOLD) {
+    log('warn', `Estimated ${estimated} samples exceeds threshold ${LARGE_THRESHOLD}, using content-script injection (safer for large jobs)`);
+    const msgRes = await ensureContentScriptAndSend(tab.id, { type: 'inject-script', payload: Object.assign({}, cfg, { estimatedCount: estimated }) });
+    if (!msgRes.ok) { log('error', 'Content-script injection failed: ' + (msgRes.error || '')); setRunningUI(false); return; }
+    log('info', 'Requested content script injection', msgRes.resp);
+    setRunningUI(true);
+    try { await api.storageSet(RUN_STATE_KEY, { running: true, startedAt: Date.now(), cfg: cfg }); } catch (e) {}
+    // clear any prior stop flag before run
+    try { await api.storageSet(STOP_FLAG_KEY, null); } catch (e) {}
+    const seenKeys = new Set();
+    const poll = setInterval(async () => {
+      const evRes = await ensureContentScriptAndSend(tab.id, { type: 'get-recent-events' });
+      if (!evRes.ok) return;
+      const arr = evRes.resp && evRes.resp.recent;
+      if (!arr || !arr.length) return;
+      arr.forEach(ev => {
+        const p = ev.payload || {};
+        const key = (ev.time ? String(ev.time) : '') + '|' + (p.evt || '') + '|' + (p.text || '');
+        if (seenKeys.has(key)) return;
+        seenKeys.add(key);
+        log('info', (p.evt || 'evt') + ' ' + (p.text || ''), p);
+        if (p.evt === 'done' || (p.evt === 'run-state' && p.running === false)) {
+          clearInterval(poll);
+          setRunningUI(false);
+          try { api.storageSet(RUN_STATE_KEY, null); } catch (e) {}
+          try { api.storageSet(STOP_FLAG_KEY, null); } catch (e) {}
+        }
+      });
+    }, 1200);
+    setTimeout(() => clearInterval(poll), 1000 * 60 * 60 * 6);
+    return;
+  }
 
   const execRes = await api.execScript(tab.id, runFetcherInIsolatedWorld, [cfg]);
-  if (execRes.ok) {
+  if (!execRes.ok) {
+    log('warn', 'execScript unavailable or failed, falling back to content script injection: ' + (execRes.error || ''));
+  } else {
     try {
-      // Normalize result shape across different browsers
       const payload = (execRes.res && execRes.res[0] && execRes.res[0].result) || (execRes.res && execRes.res.result) || null;
       if (!payload) log('error', 'executeScript returned no valid result');
       else if (!payload.ok) log('error', 'Fetch failed: ' + (payload.error || 'unknown'));
       else {
-        log('info', `Done: total=${payload.total} records=${payload.records.length} elapsed=${payload.elapsed}s`, payload.stats || {});
-        if (payload.records && payload.records.length) {
+        const total = payload.total || (payload.recordsCount || 0);
+        log('info', `execScript summary total=${total} elapsed=${payload.elapsed}s`, payload.stats || {});
+        if (total && payload.elapsed) {
+          const approxPer10 = ((payload.elapsed / Math.max(1, total)) * 10).toFixed(2);
+          log('info', `approx elapsed per 10 samples (avg): ${approxPer10}s`);
+        }
+
+        const recCount = payload.records ? payload.records.length : 0;
+        if (recCount && recCount <= 500 && payload.records) {
           try {
             const txt = payload.records.map(x => JSON.stringify(x)).join('\n');
             const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url; a.download = `auto_fetch_${Date.now()}.txt`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-            log('info', 'Download triggered');
+            log('info', 'Download triggered for returned records');
           } catch (e) { log('error', 'Download failed: ' + String(e)); }
-        } else log('info', 'No records to download');
+        } else if (total > 0 && recCount === 0) {
+          log('info', 'Large job completed in page context or results truncated; use content-script injection for browser download if needed');
+        } else {
+          log('info', 'No records to download');
+        }
       }
     } catch (e) { log('error', 'Failed to handle executeScript result: ' + String(e)); }
-    startBtn.disabled = false; stopBtn.disabled = true;
+    setRunningUI(false);
     return;
   }
 
-  // Fallback: ask content script to inject/run
-  log('warn', 'execScript unavailable or failed, falling back to content script injection: ' + (execRes.error || ''));
-  const msgRes = await api.sendMessageToTab(tab.id, { type: 'inject-script', payload: cfg });
-  if (!msgRes.ok) { log('error', 'Fallback injection failed: ' + (msgRes.error || '')); startBtn.disabled = false; stopBtn.disabled = true; return; }
-  log('info', 'Requested content script injection (ensure main.js is registered as content script)', msgRes.resp);
+  const msgRes = await ensureContentScriptAndSend(tab.id, { type: 'inject-script', payload: Object.assign({}, cfg, { estimatedCount: estimated }) });
+  if (!msgRes.ok) { log('error', 'Fallback injection failed: ' + (msgRes.error || '')); setRunningUI(false); return; }
+  log('info', 'Requested content script injection (fallback)', msgRes.resp);
+  setRunningUI(true);
+  try { await api.storageSet(RUN_STATE_KEY, { running: true, startedAt: Date.now(), cfg: cfg }); } catch (e) {}
+  try { await api.storageSet(STOP_FLAG_KEY, null); } catch (e) {}
 
-  // Poll recent events from content script for updates
+  const seenKeys = new Set();
   const poll = setInterval(async () => {
-    const evRes = await api.sendMessageToTab(tab.id, { type: 'get-recent-events' });
+    const evRes = await ensureContentScriptAndSend(tab.id, { type: 'get-recent-events' });
     if (!evRes.ok) return;
     const arr = evRes.resp && evRes.resp.recent;
     if (!arr || !arr.length) return;
-    arr.forEach(ev => { const p = ev.payload || {}; log('info', (p.evt || 'evt') + ' ' + (p.text || ''), p); });
-  }, 1000);
-  setTimeout(() => clearInterval(poll), 1000 * 60 * 5);
+    arr.forEach(ev => {
+      const p = ev.payload || {};
+      const key = (ev.time ? String(ev.time) : '') + '|' + (p.evt || '') + '|' + (p.text || '');
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      log('info', (p.evt || 'evt') + ' ' + (p.text || ''), p);
+      if (p.evt === 'done' || (p.evt === 'run-state' && p.running === false)) {
+        clearInterval(poll);
+        setRunningUI(false);
+        try { api.storageSet(RUN_STATE_KEY, null); } catch (e) {}
+        try { api.storageSet(STOP_FLAG_KEY, null); } catch (e) {}
+      }
+    });
+  }, 1200);
+  setTimeout(() => clearInterval(poll), 1000 * 60 * 60 * 6);
 });
 
-/* On open: load settings and try to read recent events */
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadSettings();
-  const tab = await api.queryActiveTab();
-  if (!tab || !tab.id) return;
-  const evRes = await api.sendMessageToTab(tab.id, { type: 'get-recent-events' });
-  if (!evRes.ok) return;
-  const arr = evRes.resp && evRes.resp.recent;
-  if (!arr || !arr.length) return;
-  arr.forEach(ev => { const p = ev.payload || {}; log('info', (p.evt || 'evt') + ' ' + (p.text || ''), p); });
-});
-
-/* ==== Fetch loop (this is the function injected/run via execScript) ==== */
+/* ==== Fetch loop (executeScript path) ==== */
 async function runFetcherInIsolatedWorld(cfg) {
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -315,6 +542,41 @@ async function runFetcherInIsolatedWorld(cfg) {
     return need * 1000;
   };
 
+  // helper to emit messages from execScript context to page (picked up by content script)
+  function emitLocal(evt, obj) {
+    try {
+      const payload = Object.assign({ __PIXEL_FETCHER__: true, evt: evt }, obj || {});
+      window.postMessage(payload, '*');
+    } catch (e) { /* noop */ }
+  }
+
+  // stop flag for execScript/isolated-world path and listener
+  window.__PIXEL_FETCHER_STOP__ = false;
+  window.addEventListener('message', function(ev) {
+    try {
+      const d = ev.data;
+      if (!d || !d.__PIXEL_FETCHER__) return;
+      if (d.cmd === 'stop') {
+        window.__PIXEL_FETCHER_STOP__ = true;
+        try { localStorage.setItem(STOP_FLAG_KEY, '1'); } catch (e) {}
+        emitLocal('info', { text: '检测到停止信号，设置停止标志' });
+        emitLocal('run-state', { running: false });
+      }
+    } catch (e) {}
+  }, false);
+
+  // stop checker that reads localStorage as authoritative cross-context signal
+  function isStoppedLocal() {
+    try {
+      if (window.__PIXEL_FETCHER_STOP__) return true;
+      try {
+        var v = localStorage.getItem(STOP_FLAG_KEY);
+        if (v === '1' || v === 'true') return true;
+      } catch (e) {}
+    } catch (e) {}
+    return false;
+  }
+
   try {
     const startBlockX = Number(cfg.startBlockX || 0);
     const startBlockY = Number(cfg.startBlockY || 0);
@@ -326,8 +588,8 @@ async function runFetcherInIsolatedWorld(cfg) {
     const endY = Number(cfg.endY || startY);
     const stepX = Math.max(1, Number(cfg.stepX || 1));
     const stepY = Math.max(1, Number(cfg.stepY || 1));
-    const CONCURRENCY = Math.max(1, Number(cfg.CONCURRENCY || 4));
-    const MAX_RPS = Math.max(1, Number(cfg.MAX_RPS || 6));
+    let CONCURRENCY = Math.max(1, Number(cfg.CONCURRENCY || 4));
+    let MAX_RPS = Math.max(1, Number(cfg.MAX_RPS || 6));
     const BATCH_PAUSE_MS = Number(cfg.BATCH_PAUSE_MS || 800);
     const MAX_ATTEMPTS = Math.max(1, Number(cfg.MAX_ATTEMPTS || 5));
     const BACKOFF_BASE_MS = Number(cfg.BACKOFF_BASE_MS || 500);
@@ -347,10 +609,10 @@ async function runFetcherInIsolatedWorld(cfg) {
     function toGlobal(bx, by, lx, ly) { return { gx: bx * BLOCK_SIZE + lx, gy: by * BLOCK_SIZE + ly }; }
     function toBlock(gx, gy) {
       const blockX = Math.floor(gx / BLOCK_SIZE);
-      const blockY = Math.floor(gy / BLOCK_SIZE);
+      const blockB = Math.floor(gy / BLOCK_SIZE);
       const lx = ((gx % BLOCK_SIZE) + BLOCK_SIZE) % BLOCK_SIZE;
       const ly = ((gy % BLOCK_SIZE) + BLOCK_SIZE) % BLOCK_SIZE;
-      return { blockX, blockB: blockY, lx, ly };
+      return { blockX, blockB, lx, ly };
     }
 
     const g1 = toGlobal(startBlockX, startBlockY, startX, startY);
@@ -368,6 +630,13 @@ async function runFetcherInIsolatedWorld(cfg) {
       }
     }
 
+    for (let i = coords.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [coords[i], coords[j]] = [coords[j], coords[i]];
+    }
+
+    emitLocal('info', { text: '[runFetcherInIsolatedWorld] estimated samples: ' + coords.length, total: coords.length });
+
     const bucket = new TokenBucket(MAX_RPS, Math.max(1, MAX_RPS));
     const records = [];
     const seenIds = new Set();
@@ -379,8 +648,10 @@ async function runFetcherInIsolatedWorld(cfg) {
       let backoff = BACKOFF_BASE_MS + Math.floor(Math.random() * 200);
       while (attempt < MAX_ATTEMPTS) {
         attempt++;
+        if (isStoppedLocal()) return { ok:false, reason: 'stopped' };
         const wait = bucket.consume(1);
         if (wait > 0) await sleep(wait + Math.floor(Math.random() * 50));
+        if (isStoppedLocal()) return { ok:false, reason: 'stopped' };
         try {
           const resp = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
           if (resp.ok) {
@@ -407,7 +678,24 @@ async function runFetcherInIsolatedWorld(cfg) {
             if (resp.status === 429) stats._429++;
             if (resp.status === 403) stats._403++;
             if (resp.status === 429 || resp.status === 403) {
-              const extra = backoff + Math.floor(Math.random() * backoff);
+              const retryAfter = (() => { try { return resp.headers.get('Retry-After'); } catch (e) { return null; } })();
+              let extra = backoff + Math.floor(Math.random() * backoff);
+              if (retryAfter) {
+                const ra = parseInt(retryAfter, 10);
+                if (!isNaN(ra)) extra = Math.max(extra, ra * 1000);
+                else { const date = Date.parse(retryAfter); if (!isNaN(date)) extra = Math.max(extra, Math.max(0, date - Date.now())); }
+              }
+              const errRatio = (stats._429 + stats._403) / Math.max(1, Math.max(1, stats.ok + stats.fail + stats.err));
+              if (errRatio > 0.02) {
+                const newConcurrency = Math.max(1, Math.floor(CONCURRENCY * 0.7));
+                const newMaxRps = Math.max(1, Math.floor(MAX_RPS * 0.7));
+                if (newConcurrency < CONCURRENCY || newMaxRps < MAX_RPS) {
+                  CONCURRENCY = newConcurrency; MAX_RPS = newMaxRps;
+                  bucket.rate = MAX_RPS;
+                  bucket.capacity = Math.max(1, MAX_RPS);
+                  emitLocal('warn', { text: '[runFetcherInIsolatedWorld] adaptive throttling applied', CONCURRENCY: CONCURRENCY, MAX_RPS: MAX_RPS });
+                }
+              }
               await sleep(extra);
               backoff = Math.min(BACKOFF_MAX_MS, backoff * 2);
               continue;
@@ -423,19 +711,37 @@ async function runFetcherInIsolatedWorld(cfg) {
     }
 
     const t0 = performance.now();
+    let done = 0;
     for (let i = 0; i < coords.length; i += CONCURRENCY) {
+      if (isStoppedLocal()) { emitLocal('info', { text: '检测到停止标志，终止任务' }); break; }
       const batch = coords.slice(i, i + CONCURRENCY);
       await Promise.all(batch.map(async c => {
         await sleep(Math.floor(Math.random() * 120));
         await fetchWithRetry(c);
-        return;
+        done++;
+        if (done % 10 === 0) {
+          const now = performance.now();
+          const batchElapsed = ((now - t0) / 1000).toFixed(2);
+          emitLocal('progress', { text: `[runFetcherInIsolatedWorld] progress ${done}/${coords.length}`, done: done, total: coords.length, elapsed: batchElapsed });
+        }
       }));
       await sleep(BATCH_PAUSE_MS + Math.floor(Math.random() * BATCH_PAUSE_MS));
+      const errRatio = (stats._429 + stats._403) / Math.max(1, done);
+      if (errRatio > 0.12) {
+        const extra = Math.min(60000, Math.floor(errRatio * 120000));
+        emitLocal('warn', { text: '[runFetcherInIsolatedWorld] high 429/403 ratio, cooling down', extra: extra });
+        await sleep(extra);
+      }
     }
 
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-    return { ok: true, total: coords.length, records, elapsed, stats };
+    try { localStorage.removeItem(STOP_FLAG_KEY); } catch (e) {}
+    const sampleLimit = 200;
+    const sample = records.length > sampleLimit ? records.slice(0, sampleLimit) : records;
+    return { ok: true, total: coords.length, records: sample, recordsTruncated: records.length > sampleLimit, recordsCount: records.length, elapsed, stats };
   } catch (err) {
+    emitLocal('error', { text: '[runFetcherInIsolatedWorld] internal error', err: String(err) });
+    try { localStorage.removeItem(STOP_FLAG_KEY); } catch (e) {}
     return { ok: false, error: String(err) };
   }
 }
