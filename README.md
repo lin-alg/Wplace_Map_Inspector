@@ -2,7 +2,7 @@
 
 - A lightweight browser extension to select a rectangular area on the Wplace map, scan which users painted pixels there, and download the results as a JSONL file. Minimal setup and one-click start/stop. UI in English.
 - The extension can scan at a speed of about 3 pixels per second and can run in the background. If you stop the scanning process, it will automatically export the result of the completed part.
-
+- You can join our discord: https://discord.gg/9SXj3xMEPr
 ---
 
 ## Quick Install
@@ -86,6 +86,8 @@ A: Yes — use `parse-to-xlsx.html` included in the repo or import the JSONL int
 Q: Will this get me banned?  
 A: The tool is intended to operate at modest request rates. You won't be banned if you keep the request rate low(using the default advanced settings).
 
+Q: Where does the cute icon come from?
+A: The icon comes from a Chinese group called "Pixel Mutual Aid Group". You can join our discord: https://discord.gg/9SXj3xMEPr
 ---
 
 ## Contributing
