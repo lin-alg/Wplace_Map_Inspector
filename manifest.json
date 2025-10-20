@@ -7,8 +7,7 @@
     "48": "icon48.png"
   },
   "action": {
-    "default_title": "Wplace_Map_Inspector",
-    "default_popup": "popup.html"
+    "default_title": "Wplace_Map_Inspector"
   },
   "permissions": [
     "activeTab",
@@ -27,15 +26,9 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://*.wplace.live/*",
-        "<all_urls>"
-      ],
-      "js": [
-        "main.js",
-        "content.js"
-      ],
-      "run_at": "document_idle",
+    "matches": ["https://*.wplace.live/*"],
+    "js": ["main.js","content.js","content-inject.js"],
+    "run_at":"document_idle",
       "all_frames": false
     }
   ]
