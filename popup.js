@@ -132,10 +132,79 @@ const inputs = {
   BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE')
 };
 
+const pickStartBtn = document.getElementById('pickStartBtn');
+const pickEndBtn = document.getElementById('pickEndBtn');
 const SETTINGS_KEY = 'pxf_settings';
 const RUN_STATE_KEY = '__PXF_RUNNING__';
 const STOP_FLAG_KEY = '__PIXEL_FETCHER_STOP__';
 const PROGRESS_KEY = '__PXF_PROGRESS__';
+
+/* Pick helpers: request page to return coords (uses content script grabCoords) */
+async function pickCoordsFromPage() {
+  try {
+    const tab = await api.queryActiveTab();
+    if (!tab || !tab.id) return { ok: false, error: 'no-active-tab' };
+
+    // Try direct message to content script; ensureContentScriptAndSend will try to inject if missing
+    const resp = await ensureContentScriptAndSend(tab.id, { type: 'grabCoords' }, 1500);
+    if (resp && resp.ok && resp.resp) {
+      const r = resp.resp;
+      // content script uses sendResponse({ ok:true, coords })
+      if (r.ok && r.coords) return { ok: true, coords: r.coords };
+      return { ok: false, error: r.error || 'no-coords', raw: r.raw };
+    }
+    return { ok: false, error: resp && resp.error ? resp.error : 'no-response' };
+  } catch (e) { return { ok: false, error: String(e) }; }
+}
+
+async function applyPickedCoords(kind /* 'start' or 'end' */) {
+  const res = await pickCoordsFromPage();
+  if (!res || !res.ok) {
+    log('error', `Pick ${kind} failed`, { error: res && res.error, raw: res && res.raw });
+    return;
+  }
+  const c = res.coords;
+  if (!c) { log('error', `Pick ${kind} parse failed`, res); return; }
+
+  if (kind === 'start') {
+    if (inputs.startBlockX) inputs.startBlockX.value = String(c.tlX || 0);
+    if (inputs.startBlockY) inputs.startBlockY.value = String(c.tlY || 0);
+    if (inputs.startX) inputs.startX.value = String(c.pxX || 0);
+    if (inputs.startY) inputs.startY.value = String(c.pxY || 0);
+    log('info', 'Picked start coords', c);
+  } else {
+    if (inputs.endBlockX) inputs.endBlockX.value = String(c.tlX || 0);
+    if (inputs.endBlockY) inputs.endBlockY.value = String(c.tlY || 0);
+    if (inputs.endX) inputs.endX.value = String(c.pxX || 0);
+    if (inputs.endY) inputs.endY.value = String(c.pxY || 0);
+    log('info', 'Picked end coords', c);
+  }
+
+  // Save immediately so popup state persists
+  try { await saveSettings(); } catch (e) { /* best-effort */ }
+}
+
+/* wire pick buttons after DOM ready */
+document.addEventListener('DOMContentLoaded', () => {
+  const pickStartBtn = document.getElementById('pickStartBtn');
+  const pickEndBtn = document.getElementById('pickEndBtn');
+
+  if (pickStartBtn) {
+    pickStartBtn.addEventListener('click', async () => {
+      pickStartBtn.disabled = true;
+      try { await applyPickedCoords('start'); }
+      finally { pickStartBtn.disabled = false; }
+    });
+  }
+
+  if (pickEndBtn) {
+    pickEndBtn.addEventListener('click', async () => {
+      pickEndBtn.disabled = true;
+      try { await applyPickedCoords('end'); }
+      finally { pickEndBtn.disabled = false; }
+    });
+  }
+});
 
 function log(type, text, extra) {
   try {
