@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Wplace_Map_Inspector",
   "version": "1.0",
-  "description": "A lightweight tool to select a region on the Wplace map and export who has painted there. | 一个用于在 Wplace 地图上选定区域，自动分析并导出“谁在这里画过”的轻量工具。",
+  "description": "Select a region on the Wplace map and export who painted there | 在 Wplace 地图上选定区域并导出绘制者信息",
   "icons": {
     "48": "icon48.png"
   },
@@ -10,18 +10,32 @@
     "default_title": "Wplace_Map_Inspector",
     "default_popup": "popup.html"
   },
-  "permissions": ["activeTab","scripting","storage"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads",
+    "alarms"
+  ],
   "host_permissions": [
-  "https://*.wplace.live/*",
-  "http://*.wplace.live/*"
-    ],
+    "https://*.wplace.live/*",
+    "https://backend.wplace.live/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
-  {
-    "matches": ["https://*.wplace.live/*"],
-    "js": ["main.js"],
-    "run_at": "document_idle",
-    "all_frames": true
-  }
+    {
+      "matches": [
+        "https://*.wplace.live/*",
+        "<all_urls>"
+      ],
+      "js": [
+        "main.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
   ]
 }
-

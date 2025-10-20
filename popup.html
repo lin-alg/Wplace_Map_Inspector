@@ -22,17 +22,19 @@
 
       <label>step X<input id="stepX" type="number" value="1" min="1"></label>
       <label>step Y<input id="stepY" type="number" value="1" min="1"></label>
-      <!-- Advanced settings -->
-      <div style="margin-top:8px;border-top:1px solid #eee;padding-top:8px;">
-  <button id="advToggle" type="button" style="padding:4px 8px;font-size:13px;">Show advanced ▾</button>
-  <div id="advBody" style="margin-top:8px;display:none;">
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-      <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
-      <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
-      <label>BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default" style="width:100%"></label>
-    </div>
-  </div>
-</div>
+
+      <div style="grid-column: 1 / -1; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
+        <button id="advToggle" type="button" style="padding:4px 8px; font-size:13px;">Show advanced ▾</button>
+        <div id="advBody" style="margin-top:8px; display:none;">
+          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
+            <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
+            <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1" style="width:80px;"></label>
+            <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.05" step="0.001" min="0" style="width:100px;"></label>
+            <label style="flex:1; min-width:200px;">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default" style="width:100%"></label>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="controls">
