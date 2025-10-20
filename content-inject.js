@@ -14,7 +14,7 @@
   // attach shadow
   const shadow = host.attachShadow({ mode: 'closed' });
 
-  // style + html (简化并保持与 popup 一致的控件 id)
+  // style + html
   const css = `
     :host { all: initial; }
     .panel {
@@ -32,6 +32,23 @@
       overflow: hidden;
       border: 1px solid #e6e6e6;
     }
+        #minBtn {
+    border: none;
+    background: transparent;
+    padding: 4px 6px;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1;
+    border-radius: 4px;
+    cursor: pointer;
+    }
+
+    /* 鼠标悬停与按下的可视反馈 */
+    #minBtn:hover { background: rgba(0,0,0,0.04); }
+    #minBtn:active { background: rgba(0,0,0,0.06); }
+
+    /* 保持键盘可访问但移除默认外发光（如需更明显聚焦可自定义） */
+    #minBtn:focus { outline: 2px solid rgba(25,118,210,0.25); outline-offset: 2px; }
     .header {
       padding: 8px 10px;
       background:#f5f5f5;
@@ -63,8 +80,7 @@
       <div class="header" id="header">
         <div class="title">Wplace_Map_Inspector</div>
         <div class="controls">
-        <button id="minBtn" title="Minimize / Restore">▢</button>
-        <button id="closeBtn" title="Close">×</button>
+          <button id="minBtn" type="button" title="Minimize / Restore" tabindex="0">—</button>
         </div>
       </div>
       <div class="body">
@@ -82,14 +98,14 @@
           <div style="grid-column:1 / -1; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
             <button id="advToggle" type="button">Show advanced ▾</button>
             <div id="advBody" style="margin-top:8px; display:none;">
-            <div class="adv-grid-responsive">
+              <div class="adv-grid-responsive">
                 <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
                 <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
                 <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1"></label>
                 <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.05" step="0.001" min="0"></label>
                 <label>BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
                 <label style="grid-column: 1 / -1;"></label>
-            </div>
+              </div>
             </div>
           </div>
         </div>
@@ -124,7 +140,6 @@
   const panelRoot = $id('panelRoot');
   const header = $id('header');
   const minBtn = $id('minBtn');
-  const closeBtn = $id('closeBtn');
   const advToggle = $id('advToggle');
   const advBody = $id('advBody');
   const startBtn = $id('startBtn');
@@ -139,9 +154,7 @@
   const inputs = {};
   fields.forEach(f => inputs[f] = $id(f));
 
-  // state
-  let minimized = false;
-
+  // log helper
   function log(type, text, extra) {
     try {
       if (!logEl) return;
@@ -157,78 +170,215 @@
     else console.log(text, extra || '');
   }
 
-  // minimize/restore toggle + close (robust: logs, pointer handlers, pointerEvents forced)
-  const minToggle = shadow.querySelector('#minBtn'); // 保持 id 不变
-  const panelBody = shadow.querySelector('.body');
-  let isMin = false;
-
-  // debug log to check element presence when script runs
-  console.log('[WPI] binding minToggle', !!minToggle, !!panelBody, !!panelRoot);
-
-  if (minToggle) {
-    // ensure the button can receive pointer events even if some page CSS tries to block
-    try { minToggle.style.pointerEvents = 'auto'; minToggle.tabIndex = 0; } catch(e){}
-
-    function doToggle(e) {
-      try {
-        e && e.stopPropagation();
-        isMin = !isMin;
-        if (isMin) {
-          if (panelBody) panelBody.classList.add('hidden');
-          if (panelRoot) {
-            panelRoot.style.width = '260px';
-            panelRoot.style.height = '48px';
-            panelRoot.classList.add('mini');
-          }
-          minToggle.textContent = '▣';
-          minToggle.title = 'Restore';
-        } else {
-          if (panelBody) panelBody.classList.remove('hidden');
-          if (panelRoot) {
-            panelRoot.style.width = '';
-            panelRoot.style.height = '560px';
-            panelRoot.classList.remove('mini');
-          }
-          minToggle.textContent = '▢';
-          minToggle.title = 'Minimize';
-        }
-        console.log('[WPI] minToggle clicked, isMin=', isMin);
-      } catch (err) { console.error('[WPI] minToggle handler error', err); }
-    }
-
-    // attach both click and pointerup to increase reliability across pages
-    minToggle.addEventListener('click', doToggle, { passive: true });
-    minToggle.addEventListener('pointerup', doToggle, { passive: true });
-
-    // also listen keyboard (Enter / Space) for accessibility testing
-    minToggle.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); doToggle(ev); }
+  // QUICK BUTTON (blue) - create early and ensure stable presence when needed
+  const quickBtnId = 'wpi-quick-btn';
+  function createQuickBtn() {
+    let existing = document.getElementById(quickBtnId);
+    if (existing) return existing;
+    const btn = document.createElement('button');
+    btn.textContent = 'WPI';
+    btn.id = quickBtnId;
+    Object.assign(btn.style, {
+      position: 'fixed',
+      right: '20px',
+      bottom: '20px',
+      zIndex: '2147483646',
+      padding: '8px 10px',
+      borderRadius: '6px',
+      background: 'rgb(25, 118, 210)',
+      color: '#fff',
+      border: 'none',
+      cursor: 'pointer',
+      pointerEvents: 'auto',
+      userSelect: 'none',
+      touchAction: 'none'
     });
-
-  } else {
-    console.warn('[WPI] minToggle not found in shadow DOM');
+    document.documentElement.appendChild(btn);
+    // bind handlers every time we create a button
+    bindQuickBtnHandlers(btn);
+    return btn;
   }
 
-  // close button: remove panel
-  // close button: remove panel and quick button, clear injected flag
-if (closeBtn) {
-  closeBtn.addEventListener('click', () => {
+  // bind/unbind quick button handlers (safe to re-bind)
+  function bindQuickBtnHandlers(btn) {
+    if (!btn) return;
+    // remove previous handlers if any
+    btn.onclick = null;
+    btn.onpointerdown = null;
+    btn.onpointermove = null;
+    btn.onpointerup = null;
+    btn.onpointercancel = null;
+
+    // state for drag detection
+    let draggingQuick = false;
+    let dragStartX = 0, dragStartY = 0;
+    let origRight = 20, origBottom = 20;
+    let movedSinceDown = false;
+
+    btn.addEventListener('pointerdown', (e) => {
+      draggingQuick = true;
+      movedSinceDown = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const comp = window.getComputedStyle(btn);
+      origRight = parseFloat(comp.right || '20') || 20;
+      origBottom = parseFloat(comp.bottom || '20') || 20;
+      try { btn.setPointerCapture && btn.setPointerCapture(e.pointerId); } catch (err) {}
+      e.stopPropagation();
+    });
+
+    btn.addEventListener('pointermove', (e) => {
+      if (!draggingQuick) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      const newRight = Math.max(8, origRight - dx);
+      const newBottom = Math.max(8, origBottom - dy);
+      btn.style.right = `${newRight}px`;
+      btn.style.bottom = `${newBottom}px`;
+      movedSinceDown = true;
+    });
+
+    // pointerup will end drag; we set a short flag to ignore the subsequent click if it immediately follows
+    btn.addEventListener('pointerup', (e) => {
+      if (!draggingQuick) return;
+      draggingQuick = false;
+      try { btn.releasePointerCapture && btn.releasePointerCapture(e.pointerId); } catch (err) {}
+      // If it was a drag, set a small timeout to suppress the next click event
+      if (movedSinceDown) {
+        btn.__suppressNextClick = true;
+        setTimeout(() => { btn.__suppressNextClick = false; }, 150);
+      }
+      movedSinceDown = false;
+      e.stopPropagation();
+    });
+
+    btn.addEventListener('pointercancel', (e) => {
+      draggingQuick = false;
+      movedSinceDown = false;
+      try { btn.releasePointerCapture && btn.releasePointerCapture(e.pointerId); } catch (err) {}
+    });
+
+    btn.addEventListener('click', (ev) => {
+      // ignore clicks generated by a drag
+      if (btn.__suppressNextClick) { btn.__suppressNextClick = false; return; }
+      quickClickHandler(ev);
+    }, true);
+  }
+
+  // ensure quick button exists and is bound
+  let quickBtn = createQuickBtn();
+
+  // state helpers for panel
+  function isPanelHidden() {
+    try { return !host.parentElement || host.style.display === 'none' || getComputedStyle(host).display === 'none'; } catch(e){ return true; }
+  }
+  function isPanelMinimized() {
     try {
-      // remove panel host if present
-      try { if (host && host.parentElement) host.remove(); } catch(e){}
-      // remove quick open button if present (id = wpi-quick-btn)
+      const body = shadow.querySelector('.body');
+      return body && body.classList.contains('hidden');
+    } catch(e){ return false; }
+  }
+
+  function showPanelFull() {
+    try {
+      if (!host.parentElement) document.documentElement.appendChild(host);
+      const body = shadow.querySelector('.body');
+      if (body) body.classList.remove('hidden');
+      if (panelRoot) { panelRoot.style.width = ''; panelRoot.style.height = '560px'; panelRoot.classList.remove('mini'); }
+      host.style.display = '';
+    } catch(e){ console.error('[WPI] showPanelFull err', e); }
+  }
+  function minimizePanelInsideHost() {
+    try {
+      const body = shadow.querySelector('.body');
+      if (body) body.classList.add('hidden');
+      if (panelRoot) { panelRoot.style.width = '260px'; panelRoot.style.height = '48px'; panelRoot.classList.add('mini'); }
+      host.style.display = '';
+    } catch(e){ console.error('[WPI] minimizePanelInsideHost err', e); }
+  }
+  function restorePanelFromMin() {
+    try {
+      const body = shadow.querySelector('.body');
+      if (body) body.classList.remove('hidden');
+      if (panelRoot) { panelRoot.style.width = ''; panelRoot.style.height = '560px'; panelRoot.classList.remove('mini'); }
+      host.style.display = '';
+    } catch(e){ console.error('[WPI] restorePanelFromMin err', e); }
+  }
+  function hidePanelAndKeepQuick() {
+    try {
+      host.style.display = 'none';
+      // ensure quick button exists and is bound
+      quickBtn = createQuickBtn();
+    } catch(e){ console.error('[WPI] hidePanelAndKeepQuick err', e); }
+  }
+  function restoreFromQuick() {
+    try {
+      if (!host.parentElement) document.documentElement.appendChild(host);
+      showPanelFull();
+      const ex = document.getElementById(quickBtnId);
+      if (ex && ex.parentElement) ex.parentElement.removeChild(ex);
+      // re-create and bind a fresh quickBtn reference for future use
+      quickBtn = createQuickBtn();
+    } catch(e){ console.error('[WPI] restoreFromQuick err', e); }
+  }
+
+  // initial state: show quickBtn and hide host
+  try { host.style.display = 'none'; } catch(e){}
+
+  // ensure pointer events and keyboard accessible for minBtn
+  if (minBtn) {
+    try { minBtn.style.pointerEvents = 'auto'; minBtn.tabIndex = 0; } catch(e){}
+    const handleMin = (ev) => {
       try {
-        const existingQuick = document.getElementById && document.getElementById('wpi-quick-btn');
-        if (existingQuick && existingQuick.parentElement) existingQuick.remove();
-      } catch(e){}
-      // clear injected marker so future injection (e.g., extension reload) can run cleanly
-      try { window.__WPI_PANEL_INJECTED__ = false; } catch(e){}
-      console.log('[WPI] closed all UI');
-    } catch(e) {
-      console.error('[WPI] closeBtn handler error', e);
-    }
-  });
-}
+        ev && ev.stopPropagation && ev.stopPropagation();
+        // If panel currently hidden (user clicked quick button area to bring up panel earlier), restore
+        if (isPanelHidden()) {
+          restoreFromQuick();
+          if (minBtn) { minBtn.textContent = '—'; minBtn.title = 'Minimize'; }
+          return;
+        }
+        const body = shadow.querySelector('.body');
+        const currentlyMin = body && body.classList.contains('hidden');
+        if (!currentlyMin) {
+          // not minimized => minimize inside host
+          minimizePanelInsideHost();
+          if (minBtn) { minBtn.textContent = '▣'; minBtn.title = 'Restore'; }
+        } else {
+          // already minimized => hide host and keep quick button
+          hidePanelAndKeepQuick();
+          if (minBtn) { minBtn.textContent = '▣'; minBtn.title = 'Restore (click WPI)'; }
+        }
+      } catch(err) { console.error('[WPI] minBtn handler err', err); }
+    };
+    minBtn.addEventListener('click', handleMin);
+    minBtn.addEventListener('pointerup', handleMin);
+    minBtn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); handleMin(ev); } });
+  }
+
+  // quickClickHandler (kept separate)
+  function quickClickHandler(ev) {
+    try {
+      // requery quickBtn in case element was re-created
+      const qb = document.getElementById(quickBtnId);
+      if (qb && qb.__suppressNextClick) { qb.__suppressNextClick = false; return; }
+      if (isPanelHidden()) {
+        showPanelFull();
+        const existing = document.getElementById(quickBtnId);
+        if (existing && existing.parentElement) existing.parentElement.removeChild(existing);
+        if (minBtn) { minBtn.textContent = '—'; minBtn.title = 'Minimize'; }
+        return;
+      }
+      if (!isPanelMinimized()) {
+        minimizePanelInsideHost();
+        if (minBtn) { minBtn.textContent = '▣'; minBtn.title = 'Restore'; }
+      } else {
+        restorePanelFromMin();
+        const existing = document.getElementById(quickBtnId);
+        if (existing && existing.parentElement) existing.parentElement.removeChild(existing);
+        if (minBtn) { minBtn.textContent = '—'; minBtn.title = 'Minimize'; }
+      }
+    } catch(e) { console.error('[WPI] quickBtn click err', e); }
+  }
 
   // advanced toggle
   if (advToggle && advBody) {
@@ -239,15 +389,18 @@ if (closeBtn) {
     });
   }
 
-  // drag support
+  // panel drag support — only start dragging when user targets the header itself, not its controls
   (function(){
     let dragging = false, startX=0, startY=0, origLeft=0, origTop=0;
     header.addEventListener('pointerdown', e => {
+      const ctrl = header.querySelector('.controls');
+      if (ctrl && ctrl.contains(e.target)) return;
       dragging = true;
       startX = e.clientX; startY = e.clientY;
       const rect = host.getBoundingClientRect();
       origLeft = rect.left; origTop = rect.top;
-      header.setPointerCapture && header.setPointerCapture(e.pointerId);
+      try { header.setPointerCapture && header.setPointerCapture(e.pointerId); } catch(e){}
+      e.stopPropagation();
     });
     header.addEventListener('pointermove', e => {
       if (!dragging) return;
@@ -257,11 +410,11 @@ if (closeBtn) {
       host.style.right = 'auto';
       host.style.bottom = 'auto';
     });
-    header.addEventListener('pointerup', e => { dragging = false; });
-    header.addEventListener('pointercancel', e => { dragging = false; });
+    header.addEventListener('pointerup', e => { dragging = false; try { header.releasePointerCapture && header.releasePointerCapture(e.pointerId); } catch(e){} });
+    header.addEventListener('pointercancel', e => { dragging = false; try { header.releasePointerCapture && header.releasePointerCapture(e.pointerId); } catch(e){} });
   })();
 
-  // storage helpers (use chrome.storage.local to persist)
+  // storage helpers
   function storageSet(key, val) {
     try { chrome.storage.local.set({ [key]: val }); }
     catch(e){}
@@ -289,34 +442,26 @@ if (closeBtn) {
     } catch (e) { return {}; }
   }
 
-  // apply picked coords (call content.js via chrome.runtime.sendMessage)
+  // pick coords from page (keeps original logic)
   async function pickCoordsFromPage() {
-  // try direct DOM parse first
-  try {
-    const el = document.getElementById('bm-h') || document.querySelector('[id="bm-h"]');
-    const raw = el ? (el.innerText || el.textContent || '') : '';
-    const coords = parseBmH(raw);
-    if (coords) return { ok: true, coords };
-    // if parse failed, fall through to message fallback
-  } catch (e) {
-    // ignore and try message fallback
+    try {
+      const el = document.getElementById('bm-h') || document.querySelector('[id="bm-h"]');
+      const raw = el ? (el.innerText || el.textContent || '') : '';
+      const coords = typeof parseBmH === 'function' ? parseBmH(raw) : null;
+      if (coords) return { ok: true, coords };
+    } catch (e) {}
+    try {
+      return await new Promise(resolve => {
+        try {
+          chrome.runtime.sendMessage({ type: 'grabCoords' }, resp => {
+            resolve(resp || { ok: false, error: 'no-response' });
+          });
+        } catch (err) {
+          resolve({ ok: false, error: String(err) });
+        }
+      });
+    } catch (e) { return { ok: false, error: String(e) }; }
   }
-
-  // fallback: ask content script / page-injected parser via runtime message
-  try {
-    return await new Promise(resolve => {
-      try {
-        chrome.runtime.sendMessage({ type: 'grabCoords' }, resp => {
-          resolve(resp || { ok: false, error: 'no-response' });
-        });
-      } catch (err) {
-        resolve({ ok: false, error: String(err) });
-      }
-    });
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
-}
 
   async function applyPickedCoords(kind) {
     try {
@@ -337,7 +482,6 @@ if (closeBtn) {
         if (inputs.endY) inputs.endY.value = String(c.pxY || 0);
         log('info','Picked end coords', c);
       }
-      // persist settings locally
       storageSet('pxf_settings', collectSettingsFromUI());
     } catch (e) { log('error','applyPickedCoords error', String(e)); }
   }
@@ -346,21 +490,18 @@ if (closeBtn) {
   if (pickStartBtn) pickStartBtn.addEventListener('click', async () => { pickStartBtn.disabled = true; try { await applyPickedCoords('start'); } finally { pickStartBtn.disabled = false; } });
   if (pickEndBtn) pickEndBtn.addEventListener('click', async () => { pickEndBtn.disabled = true; try { await applyPickedCoords('end'); } finally { pickEndBtn.disabled = false; } });
 
-  // start / stop handlers -> call background messages (start-fetch / stop-fetch)
+  // start/stop handlers (original logic)
   if (startBtn) startBtn.addEventListener('click', async () => {
     startBtn.disabled = true; if (stopBtn) stopBtn.disabled = false;
     const cfg = collectSettingsFromUI();
     log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}` });
-    // clear stop flag
     try { chrome.storage.local.remove('__PIXEL_FETCHER_STOP__'); } catch (e){}
-    // send start-fetch to background
     chrome.runtime.sendMessage({ type: 'start-fetch', cfg }, resp => {
       if (resp && resp.ok) {
         storageSet('__PXF_RUNNING__', { running:true, startedAt: Date.now(), cfg });
         log('info','Background accepted start', { jobId: resp.jobId });
       } else if (resp && resp.error === 'already-running') {
         log('warn','Start rejected: already-running. Try stop then retry.');
-        // request background stop then retry
         chrome.runtime.sendMessage({ type: 'stop-fetch' }, stopResp => {
           setTimeout(() => {
             chrome.runtime.sendMessage({ type: 'start-fetch', cfg }, r2 => {
@@ -398,7 +539,7 @@ if (closeBtn) {
 
   if (clearBtn) clearBtn.addEventListener('click', () => { if (logEl) logEl.innerHTML = ''; });
 
-  // load persisted settings into inputs on init
+  // load persisted settings
   (async function loadSettings(){
     try {
       const s = await storageGet('pxf_settings');
@@ -407,7 +548,7 @@ if (closeBtn) {
     } catch (e) {}
   })();
 
-  // poll progress and recent events to update UI/logs (reuse your storage keys)
+  // poll progress and recent events
   let pollSeen = new Set();
   async function pollProgressAndEvents() {
     try {
@@ -424,14 +565,12 @@ if (closeBtn) {
             log('info', `Progress ${progress.done}/${progress.total}`, progress);
           }
           if (progress.finished || progress.stopped) {
-            // update UI state
             try { chrome.storage.local.remove('__PXF_RUNNING__'); } catch(e){}
             if (startBtn) startBtn.disabled = false;
             if (stopBtn) stopBtn.disabled = true;
           }
         }
       }
-      // recent events from main.js
       chrome.runtime.sendMessage({ type:'get-recent-events' }, resp => {
         try {
           if (resp && resp.recent && Array.isArray(resp.recent)) {
@@ -465,7 +604,7 @@ if (closeBtn) {
     }
   });
 
-  // when storage stop flag set elsewhere, update UI
+  // storage changes listener
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes && changes['__PXF_RUNNING__']) {
@@ -484,120 +623,9 @@ if (closeBtn) {
     }
   });
 
-  // cleanup on page unload
+  // cleanup on unload
   window.addEventListener('beforeunload', () => {
     try { clearInterval(pollInterval); } catch(e){}
   });
 
-    // draggable quick open button: single visible control to toggle / minimize / restore panel
-    const quickBtn = document.createElement('button');
-    quickBtn.textContent = 'WPI';
-    quickBtn.id = 'wpi-quick-btn';
-
-    // requested base style
-    Object.assign(quickBtn.style, {
-    position: 'fixed',
-    right: '20px',
-    bottom: '20px',
-    zIndex: '2147483646',
-    padding: '8px 10px',
-    borderRadius: '6px',
-    background: 'rgb(25, 118, 210)',
-    color: 'rgb(255, 255, 255)',
-    border: 'none',
-    cursor: 'pointer',
-    pointerEvents: 'auto',
-    userSelect: 'none',
-    touchAction: 'none'
-    });
-
-    // helpers to query panel state
-    function isPanelHidden() {
-    try { return !host.parentElement || host.style.display === 'none' || getComputedStyle(host).display === 'none'; } catch(e){ return true; }
-    }
-    function isPanelMinimized() {
-    try {
-        const body = shadow.querySelector('.body');
-        return body && body.classList.contains('hidden');
-    } catch(e){ return false; }
-    }
-    function showPanelFull() {
-    try {
-        if (!host.parentElement) document.documentElement.appendChild(host);
-        const body = shadow.querySelector('.body');
-        if (body) body.classList.remove('hidden');
-        if (panelRoot) { panelRoot.style.width = ''; panelRoot.style.height = '560px'; panelRoot.classList.remove('mini'); }
-        host.style.display = '';
-    } catch(e){ console.error('[WPI] showPanelFull err', e); }
-    }
-    function minimizePanel() {
-    try {
-        const body = shadow.querySelector('.body');
-        if (body) body.classList.add('hidden');
-        if (panelRoot) { panelRoot.style.width = '260px'; panelRoot.style.height = '48px'; panelRoot.classList.add('mini'); }
-    } catch(e){ console.error('[WPI] minimizePanel err', e); }
-    }
-    function restorePanelFromMin() {
-    try {
-        const body = shadow.querySelector('.body');
-        if (body) body.classList.remove('hidden');
-        if (panelRoot) { panelRoot.style.width = ''; panelRoot.style.height = '560px'; panelRoot.classList.remove('mini'); }
-    } catch(e){ console.error('[WPI] restorePanelFromMin err', e); }
-    }
-
-    // click logic for the quick button:
-    // - if panel hidden -> show full panel
-    // - else if panel visible and not minimized -> minimize
-    // - else if panel minimized -> restore to full
-    let quickDragMoved = false;
-    quickBtn.addEventListener('click', (ev) => {
-    try {
-        if (quickDragMoved) { quickDragMoved = false; return; }
-        if (isPanelHidden()) { showPanelFull(); return; }
-        if (!isPanelMinimized()) { minimizePanel(); }
-        else { restorePanelFromMin(); }
-    } catch (e) { console.error('[WPI] quickBtn click err', e); }
-    }, { passive: true });
-
-    // draggable behavior using pointer events
-    let draggingQuick = false;
-    let dragStartX = 0, dragStartY = 0;
-    let origRight = 20, origBottom = 20;
-
-    quickBtn.addEventListener('pointerdown', (e) => {
-    try {
-        draggingQuick = true;
-        quickDragMoved = false;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        const comp = window.getComputedStyle(quickBtn);
-        origRight = parseFloat(comp.right || '20') || 20;
-        origBottom = parseFloat(comp.bottom || '20') || 20;
-        quickBtn.setPointerCapture && quickBtn.setPointerCapture(e.pointerId);
-    } catch (err) { console.warn('[WPI] quickBtn pointerdown', err); }
-    });
-
-    quickBtn.addEventListener('pointermove', (e) => {
-    if (!draggingQuick) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
-    const newRight = Math.max(8, origRight - dx);
-    const newBottom = Math.max(8, origBottom - dy);
-    quickBtn.style.right = `${newRight}px`;
-    quickBtn.style.bottom = `${newBottom}px`;
-    quickDragMoved = true;
-    });
-
-    function quickEndDrag(e) {
-    if (!draggingQuick) return;
-    draggingQuick = false;
-    try { e && quickBtn.releasePointerCapture && quickBtn.releasePointerCapture(e.pointerId); } catch (err) {}
-    setTimeout(() => { quickDragMoved = false; }, 160);
-    }
-    quickBtn.addEventListener('pointerup', quickEndDrag, { passive: true });
-    quickBtn.addEventListener('pointercancel', quickEndDrag, { passive: true });
-
-    // append and ensure initial state
-    document.documentElement.appendChild(quickBtn);
-    try { host.style.display = 'none'; } catch(e){}
 })();
