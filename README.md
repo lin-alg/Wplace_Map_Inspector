@@ -6,6 +6,11 @@ A lightweight Chromium extension that selects a rectangular area on the Wplace m
 
 ## Quick Install
 
+You can:
+1. Download the packed .crx file
+2. Open Chrome or Edge and go to `chrome://extensions/` or `edge://extensions/`, drag the .crx file to the browser to install the extension.
+
+Or:
 1. Clone or download the repository:  
    `git clone <repo_url>`  
    If you downloaded a ZIP, unzip it first.
@@ -13,20 +18,21 @@ A lightweight Chromium extension that selects a rectangular area on the Wplace m
 3. Click **Load unpacked** and choose the repository folder. The extension icon will appear in the toolbar.
 
 Notes:
-- Use Chromium-based browsers (Chrome or Edge) for easiest compatibility.
-- The extension is tuned for jobs up to ~20,000 sampled pixels. For larger scans, increase `stepX`/`stepY` to reduce request count.
+- Use Chromium-based browsers (Chrome or Edge) for easiest compatibility(Firefox hasn't been tested yet).
+- The extension is tuned for jobs up to 20,000 sampled pixels. For larger scans, increase `stepX`/`stepY` to reduce scanning count.
+- The Pickup Coordinates feature requires you to enable Blue Marble, another plugin. 
 
 ---
 
 ## Quick Start
 
 1. Open the Wplace page.
-2. Click the extension icon or the page's blue quick button ("WPI") to open the panel.
+2. Click the blue quick button ("WPI",on the bottom right of the page) to open the panel.
 3. Fill Start (top-left) and End (bottom-right) coordinates:
    - Start: `startBlockX`, `startBlockY`, `startX`, `startY`
    - End: `endBlockX`, `endBlockY`, `endX`, `endY`
 4. Set `stepX` / `stepY` to control sampling density (larger value = fewer requests). Default `1` = full resolution.
-5. (Optional) Open Advanced to adjust concurrency, rate limits, batch sizing, and URL template.
+5. (Optional and dangerous) Open Advanced to adjust concurrency, rate limits, batch sizing, and URL template.
 6. Click **Start** to begin scanning. Click **Stop** to cancel. Progress and logs appear in the panel. When finished or stopped, the collected results are exported automatically as a JSONL `.txt` file.
 7. To convert JSONL to Excel, use the included `parse-to-xlsx.html` or any tool that supports JSON Lines.
 
@@ -36,11 +42,9 @@ Notes:
 
 - Page quick button:
   - A draggable blue button labeled "WPI" sits at the page bottom-right.
-  - Dragging the button will not accidentally open the panel; drag actions suppress the subsequent click to prevent accidental toggles.
   - If the panel is closed, the quick button is (re)created and event handlers re-bound to ensure it remains functional.
 - Panel minimization:
   - The panel has a no-border minimize control rendered as a long dash.
-  - Minimize supports two levels: collapse to a compact mini state inside the host, and fully hide the panel leaving the quick button visible.
   - Keyboard accessible (focusable) while using a minimal visual footprint.
 - Pick coordinates:
   - "Pick start" / "Pick end" first tries to parse coordinates from page elements (e.g., an element with `id="bm-h"`), and falls back to a background message request if needed.

@@ -123,7 +123,7 @@
                 <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
                 <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
                 <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1"></label>
-                <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.05" step="0.001" min="0"></label>
+                <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
                 <label>BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
                 <label style="grid-column: 1 / -1;"></label>
               </div>
@@ -547,7 +547,7 @@
     // INSERTED LOG: show cfg sent and delay seconds conversion
     try { console.log('[PANEL] start-fetch sending cfg:', cfg); } catch (e) {}
     try {
-      const delayMin = Number(cfg.BATCH_DELAY_MINUTES != null ? cfg.BATCH_DELAY_MINUTES : 0.05);
+      const delayMin = Number(cfg.BATCH_DELAY_MINUTES != null ? cfg.BATCH_DELAY_MINUTES : 0.045);
       try { console.log('[PANEL] BATCH_DELAY_MINUTES', delayMin, '=> nextDelaySeconds', Math.round(delayMin * 60)); } catch (e) {}
     } catch (e) {}
 

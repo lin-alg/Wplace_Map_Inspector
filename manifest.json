@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Wplace_Map_Inspector",
-  "version": "1.0",
+  "version": "2.1",
   "description": "Select a region on the Wplace map and export who painted there | 在 Wplace 地图上选定区域并导出绘制者信息",
   "icons": {
     "48": "icon48.png"

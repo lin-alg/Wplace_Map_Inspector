@@ -1,7 +1,7 @@
 // background.js - concurrency-aware batch executor with fast authoritative stop (full file)
 // Modified: add normalization of block+pixel to match UI and injected scripts
 // Modified: track pixels count per paintedBy.id (job._seenIds entries include pixels)
-// Modified: batch logs now include elapsed time (seconds) and include next scheduled delay converted from minutes to seconds
+// Modified: export snapshot on stop (both stop-fetch message and stopJob) before clearing job
 'use strict';
 
 const RUN_STATE_KEY = '__PXF_RUNNING__';
@@ -11,7 +11,7 @@ const STOP_FLAG_KEY = '__PIXEL_FETCHER_STOP__';
 const BATCH_ALARM_NAME = 'pxf_batch_alarm';
 
 const DEFAULT_BATCH_SIZE = 10;
-const DEFAULT_BATCH_DELAY_MINUTES = 0.05; // ~3s
+const DEFAULT_BATCH_DELAY_MINUTES = 0.045; // ~2.7s
 const DEFAULT_MAX_RPS = 6;
 const DEFAULT_CONCURRENCY = 4;
 const SAMPLE_LIMIT = 200;
@@ -161,6 +161,27 @@ async function downloadTextFile(filename, text) {
   }
 }
 
+// export current job snapshot (job._seenIds or job.recordsSample) to file; used by stop flows
+async function exportJobSnapshotIfAny(reasonLabel) {
+  try {
+    const store = await getStorage([JOB_STORE_KEY]);
+    const job = store[JOB_STORE_KEY];
+    if (!job) return null;
+    const records = job._seenIds ? Object.values(job._seenIds) : (job.recordsSample || []);
+    const clipped = (records || []).slice(0, SAMPLE_LIMIT);
+    if (!clipped.length) return null;
+    const text = clipped.map(r => JSON.stringify(r)).join('\n');
+    const fname = `auto_fetch_snapshot_${reasonLabel || 'stop'}_${Date.now()}.txt`;
+    await downloadTextFile(fname, text);
+    await writeProgress({ stopped: true, reason: reasonLabel || 'snapshot-export', filename: fname, count: clipped.length, ts: Date.now() });
+    console.log('[BG] exported snapshot', fname, 'count=', clipped.length);
+    return { filename: fname, count: clipped.length };
+  } catch (e) {
+    console.warn('[BG] exportJobSnapshotIfAny failed', e);
+    return null;
+  }
+}
+
 async function startOrResumeJob(cfg) {
   cfg = cfg || {};
 
@@ -177,11 +198,11 @@ async function startOrResumeJob(cfg) {
     cfg, // normalized cfg persisted
     coords,
     nextIndex: 0,
-    recordsSample: [], // will store representative records (values from job._seenIds)
+    recordsSample: [],
     stats: { ok: 0, fail: 0, _429: 0, _403: 0, err: 0 },
     _startTime: Date.now(),
     _lastBatchTs: null,
-    _seenIds: {} // map: id -> { blockX, blockB, x, y, paintedBy, pixels }
+    _seenIds: {}
   };
 
   await chrome.storage.local.set({ [JOB_STORE_KEY]: job });
@@ -197,6 +218,13 @@ async function stopJob() {
     if (GLOBAL_ABORT_CONTROLLER) {
       try { GLOBAL_ABORT_CONTROLLER.abort(); } catch (e) {}
     }
+
+    // export snapshot if any before clearing job
+    try {
+      const snap = await exportJobSnapshotIfAny('requested-by-bg');
+      if (snap) console.log('[BG] stopJob exported snapshot', snap);
+    } catch (e) { console.warn('[BG] stopJob snapshot export error', e); }
+
     await writeProgress({ stopped: true, reason: 'requested-by-bg', ts: Date.now() });
     await writeStopFlag();
     chrome.alarms.clear(BATCH_ALARM_NAME);
@@ -238,9 +266,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const bucket = new TokenBucket(maxRps, Math.max(1, maxRps));
     const concurrency = Math.max(1, Number(cfg.CONCURRENCY || DEFAULT_CONCURRENCY));
 
-    const batchStartTs = Date.now();
     console.log('[BG] alarm handler starting batch', { jobId: job.jobId, start, end, batchSize, maxRps, concurrency, cfgDelayMin: cfg.BATCH_DELAY_MINUTES });
 
+    const batchStartTs = Date.now();
     job._seenIds = job._seenIds || {};
 
     async function fetchCoord(coord) {
@@ -488,6 +516,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (GLOBAL_ABORT_CONTROLLER) {
             try { GLOBAL_ABORT_CONTROLLER.abort(); } catch (e) {}
           }
+
+          // export snapshot if any before clearing job
+          try {
+            const snap = await exportJobSnapshotIfAny('requested-by-popup');
+            if (snap) console.log('[BG] stop-fetch exported snapshot', snap);
+          } catch (e) { console.warn('[BG] stop-fetch snapshot export error', e); }
+
           await writeProgress({ stopped: true, reason: 'requested-by-popup', ts: Date.now() });
           await writeStopFlag();
           chrome.alarms.clear(BATCH_ALARM_NAME);
