@@ -243,7 +243,7 @@ function collectSettingsFromUI() {
       CONCURRENCY: Number(inputs.CONCURRENCY?.value || 4),
       MAX_RPS: Number(inputs.MAX_RPS?.value || 6),
       BATCH_SIZE: Math.max(1, Number(inputs.BATCH_SIZE?.value || 10)),
-      BATCH_DELAY_MINUTES: Math.max(0, Number(inputs.BATCH_DELAY_MINUTES?.value || 0.05)),
+      BATCH_DELAY_MINUTES: Math.max(0, Number(inputs.BATCH_DELAY_MINUTES?.value || 0.045)),
       BASE_TEMPLATE: (inputs.BASE_TEMPLATE?.value || '').trim()
     };
   } catch (e) {
@@ -252,7 +252,7 @@ function collectSettingsFromUI() {
       startBlockX: 0, startBlockY: 0, startX: 0, startY: 0,
       endBlockX: 0, endBlockY: 0, endX: 0, endY: 0,
       stepX: 1, stepY: 1, CONCURRENCY: 4, MAX_RPS: 6,
-      BATCH_SIZE: 10, BATCH_DELAY_MINUTES: 0.05, BASE_TEMPLATE: ''
+      BATCH_SIZE: 10, BATCH_DELAY_MINUTES: 0.045, BASE_TEMPLATE: ''
     };
   }
 }
