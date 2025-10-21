@@ -106,31 +106,69 @@
     applyLang(el.lang.value);
     el.lang.addEventListener('change', () => setLang(el.lang.value));
 
-    // parse lines -> rows, dedupe by paintedBy.id
+    // parse lines -> rows, aggregate by paintedBy.id and support pixels field
     function buildRows(lines) {
-      const rows = [];
-      const seen = new Set();
+      // use map keyed by id (string). For missing id, collect under "__noid_<n>"
+      const byId = new Map();
+      let noidCounter = 0;
+
+      function normalizeValue(v) {
+        if (v === null || v === undefined) return '';
+        return v;
+      }
+
       for (const ln of lines) {
         try {
           const obj = JSON.parse(ln);
           const pb = obj.paintedBy || {};
-          const id = pb.id != null ? String(pb.id) : '';
-          if (id && seen.has(id)) continue;
-          if (id) seen.add(id);
-          rows.push({
-            blockX: obj.blockX ?? obj.blockB ?? '',
-            blockB: obj.blockB ?? obj.blockY ?? '',
-            x: obj.x ?? '',
-            y: obj.y ?? '',
-            id: id,
-            name: pb.name ?? '',
-            allianceId: pb.allianceId ?? '',
-            allianceName: pb.allianceName ?? '',
-            equippedFlag: pb.equippedFlag ?? ''
-          });
+          const rawId = (pb.id != null) ? String(pb.id) : '';
+          const idKey = rawId !== '' ? rawId : `__noid_${noidCounter}`;
+          if (rawId === '') noidCounter++;
+
+          const pixels = Number(obj.pixels != null ? obj.pixels : 1) || 0;
+
+          // existing entry: sum pixels and keep the first-seen block/x/y/name/alliance etc if missing later
+          if (byId.has(idKey)) {
+            const ex = byId.get(idKey);
+            ex.pixels = (ex.pixels || 0) + pixels;
+            // if ex has empty x/y but current has values, fill them
+            if ((ex.x === '' || ex.x === null) && (obj.x != null)) ex.x = obj.x;
+            if ((ex.y === '' || ex.y === null) && (obj.y != null)) ex.y = obj.y;
+            if ((ex.blockX === '' || ex.blockX === null) && (obj.blockX != null)) ex.blockX = obj.blockX;
+            if ((ex.blockB === '' || ex.blockB === null) && (obj.blockB != null)) ex.blockB = obj.blockB;
+            // merge paintedBy fields preferring non-empty new values
+            try {
+              const pbcurr = (pb && typeof pb === 'object') ? pb : {};
+              ex.name = ex.name || (pbcurr.name ?? '');
+              ex.allianceId = ex.allianceId || (pbcurr.allianceId ?? '');
+              ex.allianceName = ex.allianceName || (pbcurr.allianceName ?? '');
+              ex.equippedFlag = (ex.equippedFlag === '' || ex.equippedFlag === null) ? (pbcurr.equippedFlag ?? '') : ex.equippedFlag;
+            } catch (e) {}
+          } else {
+            // new row
+            const row = {
+              blockX: normalizeValue(obj.blockX ?? obj.blockB ?? ''),
+              blockB: normalizeValue(obj.blockB ?? obj.blockY ?? ''),
+              x: normalizeValue(obj.x ?? ''),
+              y: normalizeValue(obj.y ?? ''),
+              id: rawId !== '' ? rawId : '',
+              name: normalizeValue(pb.name ?? ''),
+              allianceId: normalizeValue(pb.allianceId ?? ''),
+              allianceName: normalizeValue(pb.allianceName ?? ''),
+              equippedFlag: normalizeValue(pb.equippedFlag ?? ''),
+              pixels: pixels
+            };
+            byId.set(idKey, row);
+          }
         } catch (e) {
           // skip invalid line
         }
+      }
+
+      // convert map to rows array; for __noid_ keys set id to empty string
+      const rows = [];
+      for (const [key, val] of byId.entries()) {
+        rows.push(val);
       }
       return rows;
     }
@@ -161,9 +199,10 @@
       const lang = el.lang.value;
       if (!rows.length) { alert(L[lang].parseFirst); return; }
       if (typeof XLSX === 'undefined') { alert(L[lang].libMissing); return; }
-      const headers = ['blockX','blockB','x','y','id','name','allianceId','allianceName','equippedFlag'];
+      // include pixels column
+      const headers = ['blockX','blockB','x','y','id','name','allianceId','allianceName','equippedFlag','pixels'];
       const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
-      ws['!cols'] = [{wch:8},{wch:8},{wch:6},{wch:6},{wch:12},{wch:18},{wch:10},{wch:18},{wch:10}];
+      ws['!cols'] = [{wch:8},{wch:8},{wch:6},{wch:6},{wch:12},{wch:18},{wch:10},{wch:18},{wch:10},{wch:8}];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
       const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' });

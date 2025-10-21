@@ -32,6 +32,27 @@
       overflow: hidden;
       border: 1px solid #e6e6e6;
     }
+      .header { position: relative; display: flex; align-items: center; justify-content: flex-start; padding: 8px 10px; background:#f5f5f5; border-bottom:1px solid #eee; cursor:grab; }
+
+    /* 居中标题（绝对定位，水平居中） */
+    .title {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      top: 50%;
+      transform-origin: center;
+      transform: translateX(-50%) translateY(-50%); /* 保证真正垂直居中 */
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      max-width: calc(100% - 140px); /* 留出左右控件空间，视需要调整 */
+      text-overflow: ellipsis;
+      overflow: hidden;
+      pointer-events: none; /* 让标题不拦截 header 的拖拽或点击 */
+    }
+
+    /* 保持右侧 controls 在 header 的正常流中 */
+    .header .controls { margin-left: auto; display: flex; gap:6px; align-items:center; }
         #minBtn {
     border: none;
     background: transparent;
@@ -78,7 +99,7 @@
   const html = `
     <div class="panel" id="panelRoot">
       <div class="header" id="header">
-        <div class="title">Wplace_Map_Inspector</div>
+        <div class="title">          Wplace_Map_Inspector</div>
         <div class="controls">
           <button id="minBtn" type="button" title="Minimize / Restore" tabindex="0">—</button>
         </div>
@@ -442,6 +463,32 @@
     } catch (e) { return {}; }
   }
 
+  // --- helper for total estimate: normalize block+pixel like injector uses ---
+  const UI_BLOCK_SIZE = 1000; // match inject script default
+  function normalizeBlockPixelUI(blockX, blockB, pxX, pxY, BLOCK_SIZE) {
+    let bx = Number(blockX) || 0;
+    let by = Number(blockB) || 0;
+    let px = Number(pxX) || 0;
+    let py = Number(pxY) || 0;
+    if (!Number.isFinite(px)) px = 0;
+    if (!Number.isFinite(py)) py = 0;
+
+    if (px >= BLOCK_SIZE || px < 0) {
+      const carryX = Math.floor(px / BLOCK_SIZE);
+      bx = bx + carryX;
+      px = px - carryX * BLOCK_SIZE;
+      if (px < 0) { px += BLOCK_SIZE; bx -= 1; }
+    }
+    if (py >= BLOCK_SIZE || py < 0) {
+      const carryY = Math.floor(py / BLOCK_SIZE);
+      by = by + carryY;
+      py = py - carryY * BLOCK_SIZE;
+      if (py < 0) { py += BLOCK_SIZE; by -= 1; }
+    }
+    return { blockX: bx, blockB: by, pxX: px, pxY: py };
+  }
+  function toGlobalUI(bx, by, lx, ly, BLOCK_SIZE) { return { gx: bx * BLOCK_SIZE + lx, gy: by * BLOCK_SIZE + ly }; }
+
   // pick coords from page (keeps original logic)
   async function pickCoordsFromPage() {
     try {
@@ -466,6 +513,8 @@
   async function applyPickedCoords(kind) {
     try {
       const res = await pickCoordsFromPage();
+      // INSERTED LOG: show raw pick result coming from page or runtime
+      try { console.log('[PANEL] applyPickedCoords kind=' + kind + ' rawPickResult=', res); } catch (e) {}
       if (!res || !res.ok) { log('error', `Pick ${kind} failed`, res); return; }
       const c = res.coords;
       if (!c) { log('error', `Pick ${kind} parse failed`, res); return; }
@@ -490,11 +539,38 @@
   if (pickStartBtn) pickStartBtn.addEventListener('click', async () => { pickStartBtn.disabled = true; try { await applyPickedCoords('start'); } finally { pickStartBtn.disabled = false; } });
   if (pickEndBtn) pickEndBtn.addEventListener('click', async () => { pickEndBtn.disabled = true; try { await applyPickedCoords('end'); } finally { pickEndBtn.disabled = false; } });
 
-  // start/stop handlers (original logic)
+  // start/stop handlers (original logic) — modified to compute safer Total estimate
   if (startBtn) startBtn.addEventListener('click', async () => {
     startBtn.disabled = true; if (stopBtn) stopBtn.disabled = false;
     const cfg = collectSettingsFromUI();
-    log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}` });
+
+    // INSERTED LOG: show cfg sent and delay seconds conversion
+    try { console.log('[PANEL] start-fetch sending cfg:', cfg); } catch (e) {}
+    try {
+      const delayMin = Number(cfg.BATCH_DELAY_MINUTES != null ? cfg.BATCH_DELAY_MINUTES : 0.05);
+      try { console.log('[PANEL] BATCH_DELAY_MINUTES', delayMin, '=> nextDelaySeconds', Math.round(delayMin * 60)); } catch (e) {}
+    } catch (e) {}
+
+    // safer Total estimate using normalization and UI_BLOCK_SIZE
+    try {
+      const s = normalizeBlockPixelUI(cfg.startBlockX, cfg.startBlockY, cfg.startX, cfg.startY, UI_BLOCK_SIZE);
+      const e = normalizeBlockPixelUI(cfg.endBlockX, cfg.endBlockY, cfg.endX, cfg.endY, UI_BLOCK_SIZE);
+      const g1tmp = toGlobalUI(s.blockX, s.blockB, s.pxX, s.pxY, UI_BLOCK_SIZE);
+      const g2tmp = toGlobalUI(e.blockX, e.blockB, e.pxX, e.pxY, UI_BLOCK_SIZE);
+      const minGXtmp = Math.min(g1tmp.gx, g2tmp.gx), maxGXtmp = Math.max(g1tmp.gx, g2tmp.gx);
+      const minGYtmp = Math.min(g1tmp.gy, g2tmp.gy), maxGYtmp = Math.max(g1tmp.gy, g2tmp.gy);
+      const totalX = Math.floor((maxGXtmp - minGXtmp) / (cfg.stepX || 1)) + 1;
+      const totalY = Math.floor((maxGYtmp - minGYtmp) / (cfg.stepY || 1)) + 1;
+      const totalEstimate = Math.max(0, totalX * totalY);
+
+      // INSERTED LOG: show normalization and estimate details
+      try { console.log('[PANEL] normalized start', s, 'normalized end', e, 'g1tmp', g1tmp, 'g2tmp', g2tmp, 'stepX', cfg.stepX, 'stepY', cfg.stepY, 'totalEstimate', totalEstimate); } catch (err) {}
+
+      log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}, Total: ${totalEstimate}` });
+    } catch (e) {
+      log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}` });
+    }
+
     try { chrome.storage.local.remove('__PIXEL_FETCHER_STOP__'); } catch (e){}
     chrome.runtime.sendMessage({ type: 'start-fetch', cfg }, resp => {
       if (resp && resp.ok) {
@@ -529,7 +605,7 @@
       if (resp && resp.ok) {
         log('info','Stop acknowledged by background');
         storageSet('__PXF_RUNNING__', null);
-        try { chrome.storage.local.remove('__PXF_JOB_STORE__'); } catch(e){}
+        try { chrome.storage.local.remove('__PIXEL_JOB_STORE__'); } catch(e){}
       } else {
         log('warn','Background stop may have failed', resp);
         stopBtn.disabled = false;
@@ -554,13 +630,18 @@
     try {
       const pRaw = await storageGet('__PXF_PROGRESS__');
       const progress = pRaw || null;
+
+      // INSERTED LOG: raw progress polled from storage
+      try { if (progress) console.log('[PANEL] polled __PXF_PROGRESS__ raw:', progress); } catch (e) {}
+
       if (progress) {
         const key = JSON.stringify({ done: progress.done, total: progress.total, ts: progress.timestamp || '' }).slice(0,200);
         if (!pollSeen.has(key)) {
           pollSeen.add(key);
           if (progress.lastBatch) {
             const lb = progress.lastBatch;
-            log('info', `Batch ${lb.batchStartIndex}→${lb.batchEndIndex} (${lb.batchCount})`, { durationMs: lb.batchDurationMs });
+            // include elapsedSeconds if available in lastBatch
+            log('info', `Batch ${lb.batchStartIndex}→${lb.batchEndIndex} (${lb.batchCount})`, { durationMs: lb.batchDurationMs, elapsedSec: lb.batchElapsedSec || null });
           } else {
             log('info', `Progress ${progress.done}/${progress.total}`, progress);
           }
