@@ -1,4 +1,7 @@
 // background.js - concurrency-aware batch executor with fast authoritative stop (full file)
+// Modified: add normalization of block+pixel to match UI and injected scripts
+// Modified: track pixels count per paintedBy.id (job._seenIds entries include pixels)
+// Modified: batch logs now include elapsed time (seconds) and include next scheduled delay converted from minutes to seconds
 'use strict';
 
 const RUN_STATE_KEY = '__PXF_RUNNING__';
@@ -74,12 +77,41 @@ function buildUrlFromTpl(cfg, blockX, blockB, lx, ly) {
   return `https://backend.wplace.live/s0/pixel/${blockX}/${blockB}?x=${lx}&y=${ly}`;
 }
 
+// normalize a block+pixel pair so px in [0, BLOCK_SIZE-1] and carry to blocks when overflow/underflow
+function normalizeBlockPixel(blockX, blockB, pxX, pxY, BLOCK_SIZE) {
+  let bx = Number(blockX) || 0;
+  let by = Number(blockB) || 0;
+  let px = Number(pxX) || 0;
+  let py = Number(pxY) || 0;
+  if (!Number.isFinite(px)) px = 0;
+  if (!Number.isFinite(py)) py = 0;
+  if (px >= BLOCK_SIZE || px < 0) {
+    const carryX = Math.floor(px / BLOCK_SIZE);
+    bx = bx + carryX;
+    px = px - carryX * BLOCK_SIZE;
+    if (px < 0) { px += BLOCK_SIZE; bx -= 1; }
+  }
+  if (py >= BLOCK_SIZE || py < 0) {
+    const carryY = Math.floor(py / BLOCK_SIZE);
+    by = by + carryY;
+    py = py - carryY * BLOCK_SIZE;
+    if (py < 0) { py += BLOCK_SIZE; by -= 1; }
+  }
+  return { blockX: bx, blockB: by, pxX: px, pxY: py };
+}
+
 function computeCoords(cfg) {
+  // Use the same normalization semantics as UI and injected fetcher
   const BLOCK_SIZE = Number(cfg.BLOCK_SIZE || 1000);
-  const g1x = (Number(cfg.startBlockX || 0) * BLOCK_SIZE) + Number(cfg.startX || 0);
-  const g1y = (Number(cfg.startBlockY || 0) * BLOCK_SIZE) + Number(cfg.startY || 0);
-  const g2x = (Number(cfg.endBlockX || cfg.startBlockX || 0) * BLOCK_SIZE) + Number(cfg.endX || cfg.startX || 0);
-  const g2y = (Number(cfg.endBlockY || cfg.startBlockY || 0) * BLOCK_SIZE) + Number(cfg.endY || cfg.startY || 0);
+
+  const sNorm = normalizeBlockPixel(cfg.startBlockX, cfg.startBlockY, cfg.startX, cfg.startY, BLOCK_SIZE);
+  const eNorm = normalizeBlockPixel(cfg.endBlockX, cfg.endBlockY, cfg.endX, cfg.endY, BLOCK_SIZE);
+
+  const g1x = (Number(sNorm.blockX) * BLOCK_SIZE) + Number(sNorm.pxX);
+  const g1y = (Number(sNorm.blockB) * BLOCK_SIZE) + Number(sNorm.pxY);
+  const g2x = (Number(eNorm.blockX) * BLOCK_SIZE) + Number(eNorm.pxX);
+  const g2y = (Number(eNorm.blockB) * BLOCK_SIZE) + Number(eNorm.pxY);
+
   const minGX = Math.min(g1x, g2x), maxGX = Math.max(g1x, g2x);
   const minGY = Math.min(g1y, g2y), maxGY = Math.max(g1y, g2y);
   const stepX = Math.max(1, Number(cfg.stepX || 1));
@@ -145,11 +177,11 @@ async function startOrResumeJob(cfg) {
     cfg, // normalized cfg persisted
     coords,
     nextIndex: 0,
-    recordsSample: [],
+    recordsSample: [], // will store representative records (values from job._seenIds)
     stats: { ok: 0, fail: 0, _429: 0, _403: 0, err: 0 },
     _startTime: Date.now(),
     _lastBatchTs: null,
-    _seenIds: {}
+    _seenIds: {} // map: id -> { blockX, blockB, x, y, paintedBy, pixels }
   };
 
   await chrome.storage.local.set({ [JOB_STORE_KEY]: job });
@@ -206,9 +238,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const bucket = new TokenBucket(maxRps, Math.max(1, maxRps));
     const concurrency = Math.max(1, Number(cfg.CONCURRENCY || DEFAULT_CONCURRENCY));
 
+    const batchStartTs = Date.now();
     console.log('[BG] alarm handler starting batch', { jobId: job.jobId, start, end, batchSize, maxRps, concurrency, cfgDelayMin: cfg.BATCH_DELAY_MINUTES });
 
-    const batchStartTs = Date.now();
     job._seenIds = job._seenIds || {};
 
     async function fetchCoord(coord) {
@@ -224,19 +256,37 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
           if (data) {
             const pb = data.paintedBy || null;
             const pbId = pb && pb.id != null ? String(pb.id) : null;
+            const pbCopy = (pb && typeof pb === 'object') ? Object.assign({}, pb) : pb;
+            if (pbCopy && ('picture' in pbCopy)) delete pbCopy.picture;
+
+            // Track pixels per id (and a special __noid bucket)
             if (pbId !== null) {
-              if (pbId !== '0' && !job._seenIds[pbId]) {
-                const pbCopy = (pb && typeof pb === 'object') ? Object.assign({}, pb) : pb;
-                if (pbCopy && 'picture' in pbCopy) delete pbCopy.picture;
-                job.recordsSample.push({ blockX: coord.blockX, blockB: coord.blockB, x: coord.lx, y: coord.ly, paintedBy: pbCopy });
-                job._seenIds[pbId] = true;
-                if (job.recordsSample.length > SAMPLE_LIMIT) job.recordsSample.shift();
+              if (!job._seenIds[pbId]) {
+                job._seenIds[pbId] = {
+                  blockX: coord.blockX,
+                  blockB: coord.blockB,
+                  x: coord.lx,
+                  y: coord.ly,
+                  paintedBy: pbCopy,
+                  pixels: 1
+                };
+              } else {
+                job._seenIds[pbId].pixels = (job._seenIds[pbId].pixels || 0) + 1;
               }
             } else {
-              const pbCopy = (pb && typeof pb === 'object') ? Object.assign({}, pb) : pb;
-              if (pbCopy && 'picture' in pbCopy) delete pbCopy.picture;
-              job.recordsSample.push({ blockX: coord.blockX, blockB: coord.blockB, x: coord.lx, y: coord.ly, paintedBy: pbCopy });
-              if (job.recordsSample.length > SAMPLE_LIMIT) job.recordsSample.shift();
+              const nk = '__noid';
+              if (!job._seenIds[nk]) {
+                job._seenIds[nk] = {
+                  blockX: coord.blockX,
+                  blockB: coord.blockB,
+                  x: coord.lx,
+                  y: coord.ly,
+                  paintedBy: pbCopy,
+                  pixels: 1
+                };
+              } else {
+                job._seenIds[nk].pixels = (job._seenIds[nk].pixels || 0) + 1;
+              }
             }
           }
           job.stats.ok++;
@@ -262,7 +312,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     // batch concurrency pool
     const batchCoords = coords.slice(start, end);
     let processed = 0;
-    const results = [];
 
     const workers = new Array(concurrency).fill(null).map(async () => {
       while (true) {
@@ -280,21 +329,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
           break;
         }
 
-        // get next index safely
         const idx = processed;
         if (idx >= batchCoords.length) break;
-        // increment processed ahead to reserve slot
         processed++;
         const coord = batchCoords[idx];
-        const r = await fetchCoord(coord);
-        results.push(r);
+        await fetchCoord(coord);
 
         // persist progress occasionally
         if (((start + processed) % 5) === 0 || (start + processed) === end) {
           try {
             job.nextIndex = start + processed;
             await chrome.storage.local.set({ [JOB_STORE_KEY]: job });
-            await writeProgress({ done: job.nextIndex, total: coords.length, records: job.recordsSample, stats: job.stats, timestamp: Date.now() });
+            const recordsArr = job._seenIds ? Object.values(job._seenIds).slice(0, SAMPLE_LIMIT) : job.recordsSample;
+            await writeProgress({ done: job.nextIndex, total: coords.length, records: recordsArr, stats: job.stats, timestamp: Date.now() });
           } catch (e) { /* best-effort */ }
         }
       }
@@ -325,10 +372,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       batchElapsedSec: cumulativeElapsedSec
     };
 
+    // build progress payload using job._seenIds as records
+    const progressRecords = job._seenIds ? Object.values(job._seenIds).slice(0, SAMPLE_LIMIT) : job.recordsSample;
     const progressPayload = {
       done: job.nextIndex,
       total: coords.length,
-      records: job.recordsSample,
+      records: progressRecords,
       stats: job.stats,
       lastBatch,
       timestamp: Date.now(),
@@ -336,7 +385,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     };
     await writeProgress(progressPayload);
 
-    console.log('[BG] processed batch', start, '->', job.nextIndex, 'of', coords.length, 'durationMs=', batchDurationMs, 'stats=', job.stats);
+    // Compute elapsed including next batch delay for logging clarity
+    const nextDelayMinutes = Number(cfg.BATCH_DELAY_MINUTES != null ? cfg.BATCH_DELAY_MINUTES : DEFAULT_BATCH_DELAY_MINUTES);
+    const nextDelaySeconds = Math.round(nextDelayMinutes * 60);
+    const elapsedSinceStartSec = job._startTime ? Math.round((batchEndTs - job._startTime) / 1000) : null;
+
+    console.log('[BG] processed batch', start, '->', job.nextIndex, 'of', coords.length, 'durationMs=', batchDurationMs, 'elapsedSec=', elapsedSinceStartSec, 'nextDelaySec=', nextDelaySeconds, 'stats=', job.stats);
 
     const totalRequests = Math.max(1, job.stats.ok + job.stats.fail + job.stats.err);
     const rate429_403 = (job.stats._429 + job.stats._403) / totalRequests;
@@ -356,7 +410,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         const final = {
           done: coords.length,
           total: coords.length,
-          records: job.recordsSample,
+          records: job._seenIds ? Object.values(job._seenIds) : job.recordsSample,
           stats: job.stats,
           finished: true,
           timestamp: Date.now()
@@ -364,11 +418,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await writeProgress(final);
 
         try {
-          const clipped = job.recordsSample.slice(0, SAMPLE_LIMIT);
+          const clipped = (job._seenIds ? Object.values(job._seenIds) : job.recordsSample).slice(0, SAMPLE_LIMIT);
           const text = clipped.map(r => JSON.stringify(r)).join('\n');
           const fname = `auto_fetch_${Date.now()}.txt`;
           await downloadTextFile(fname, text);
-          await writeProgress({ finished: true, filename: fname, count: job.recordsSample.length, stats: job.stats });
+          await writeProgress({ finished: true, filename: fname, count: clipped.length, stats: job.stats });
           console.log('[BG] job finished, download requested', fname);
         } catch (e) {
           console.error('[BG] finish download error', e);
