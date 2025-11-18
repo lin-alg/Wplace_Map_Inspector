@@ -277,6 +277,10 @@ function injectFetcherScript(payload) {
 "      const ly = ((gy % BLOCK_SIZE) + BLOCK_SIZE) % BLOCK_SIZE;\n" +
 "      return { blockX, blockB, lx, ly };\n" +
 "    }\n" +
+"    function escapeCsvValue(value){ if (value === null || value === undefined) return ''; const str = String(value); return /[\",\n]/.test(str) ? ('\"' + str.replace(/\"/g,'\"\"') + '\"') : str; }\n" +
+"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByUsername','paintedByRaw']; const lines = [header.join(',')];\n" +
+"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name, pb && (pb.username || pb.handle || pb.tag), pb ? JSON.stringify(pb) : '']; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
+"      return lines.join('\\n'); }\n" +
 "\n" +
 "    // normalize start/end first to handle px overflow (carry into blocks)\n" +
 "    const sNorm = normalizeBlockPixel(startBlockX, startBlockY, startX, startY);\n" +
@@ -390,10 +394,10 @@ function injectFetcherScript(payload) {
 "    const recordsArr = Array.from(byId.values());\n" +
 "    if (recordsArr.length > 0) {\n" +
 "      try {\n" +
-"        const lines = recordsArr.map(r => JSON.stringify(r));\n" +
-"        const blob = new Blob([lines.join(\"\\n\")], { type: 'text/plain;charset=utf-8' });\n" +
-"        const fname = `auto_fetch_${minGX||'g'}_${minGY||'g'}_to_${maxGX||'g'}_${maxGY||'g'}_step${stepX}x${stepY}.txt`;\n" +
-"        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); emit('info', { text: '已下载 ' + fname, lines: lines.length });\n" +
+"        const csv = recordsToCsv(recordsArr);\n" +
+"        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });\n" +
+"        const fname = `auto_fetch_${minGX||'g'}_${minGY||'g'}_to_${maxGX||'g'}_${maxGY||'g'}_step${stepX}x${stepY}.csv`;\n" +
+"        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); emit('info', { text: '已下载 ' + fname, lines: recordsArr.length });\n" +
 "      } catch (e) { emit('error', { text: '导出失败', err: String(e) }); }\n" +
 "    } else { emit('info', { text: '未收集到任何记录' }); }\n" +
 "\n" +

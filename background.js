@@ -133,9 +133,9 @@ function computeCoords(cfg) {
   return coords;
 }
 
-async function downloadTextFile(filename, text) {
+async function downloadTextFile(filename, text, mimeType = 'text/plain;charset=utf-8') {
   try {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([text], { type: mimeType });
     const url = URL.createObjectURL(blob);
     chrome.downloads.download({ url, filename }, id => {
       const lastErr = chrome.runtime.lastError && chrome.runtime.lastError.message;
@@ -148,7 +148,8 @@ async function downloadTextFile(filename, text) {
   } catch (e) {
     try {
       const b64 = btoa(unescape(encodeURIComponent(text)));
-      const dataUrl = 'data:text/plain;base64,' + b64;
+      const baseMime = (mimeType || 'text/plain;charset=utf-8').split(';')[0] || 'text/plain';
+      const dataUrl = `data:${baseMime};base64,` + b64;
       chrome.downloads.download({ url: dataUrl, filename }, id => {
         const lastErr = chrome.runtime.lastError && chrome.runtime.lastError.message;
         console.log('[BG] downloads.download fallback callback', { id, lastError: lastErr });
@@ -161,6 +162,34 @@ async function downloadTextFile(filename, text) {
   }
 }
 
+function escapeCsvValue(value) {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (!/[",\n]/.test(str)) return str;
+  return '"' + str.replace(/"/g, '""') + '"';
+}
+
+function recordsToCsv(records) {
+  const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByUsername','paintedByRaw'];
+  const lines = [header.join(',')];
+  (records || []).forEach(rec => {
+    const pb = rec && rec.paintedBy ? rec.paintedBy : {};
+    const row = [
+      rec && rec.blockX,
+      rec && rec.blockB,
+      rec && (rec.x != null ? rec.x : rec.lx),
+      rec && (rec.y != null ? rec.y : rec.ly),
+      rec && rec.pixels,
+      pb && pb.id,
+      pb && pb.name,
+      pb && (pb.username || pb.handle || pb.tag),
+      pb ? JSON.stringify(pb) : ''
+    ].map(escapeCsvValue);
+    lines.push(row.join(','));
+  });
+  return lines.join('\n');
+}
+
 // export current job snapshot (job._seenIds or job.recordsSample) to file; used by stop flows
 async function exportJobSnapshotIfAny(reasonLabel) {
   try {
@@ -170,9 +199,9 @@ async function exportJobSnapshotIfAny(reasonLabel) {
     const records = job._seenIds ? Object.values(job._seenIds) : (job.recordsSample || []);
     const clipped = (records || []).slice(0, SAMPLE_LIMIT);
     if (!clipped.length) return null;
-    const text = clipped.map(r => JSON.stringify(r)).join('\n');
-    const fname = `auto_fetch_snapshot_${reasonLabel || 'stop'}_${Date.now()}.txt`;
-    await downloadTextFile(fname, text);
+    const csv = recordsToCsv(clipped);
+    const fname = `auto_fetch_snapshot_${reasonLabel || 'stop'}_${Date.now()}.csv`;
+    await downloadTextFile(fname, csv, 'text/csv;charset=utf-8');
     await writeProgress({ stopped: true, reason: reasonLabel || 'snapshot-export', filename: fname, count: clipped.length, ts: Date.now() });
     console.log('[BG] exported snapshot', fname, 'count=', clipped.length);
     return { filename: fname, count: clipped.length };
@@ -447,9 +476,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
         try {
           const clipped = (job._seenIds ? Object.values(job._seenIds) : job.recordsSample).slice(0, SAMPLE_LIMIT);
-          const text = clipped.map(r => JSON.stringify(r)).join('\n');
-          const fname = `auto_fetch_${Date.now()}.txt`;
-          await downloadTextFile(fname, text);
+          const csv = recordsToCsv(clipped);
+          const fname = `auto_fetch_${Date.now()}.csv`;
+          await downloadTextFile(fname, csv, 'text/csv;charset=utf-8');
           await writeProgress({ finished: true, filename: fname, count: clipped.length, stats: job.stats });
           console.log('[BG] job finished, download requested', fname);
         } catch (e) {

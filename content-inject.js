@@ -787,10 +787,11 @@
     script.remove();
   })();
 
+  const BLUE_MARBLE_HUD_REGEX = /Tl\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Tl\s*Y\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*Y\s*[:：]\s*([\-\d.]+)/i;
+
   function parseBlueMarbleHud(rawText) {
     if (!rawText) return null;
-    const re = /Tl\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Tl\s*Y\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*Y\s*[:：]\s*([\-\d.]+)/i;
-    const match = re.exec(rawText);
+    const match = BLUE_MARBLE_HUD_REGEX.exec(rawText);
     if (!match) return null;
     return {
       tlX: Number(match[1]),
@@ -858,8 +859,7 @@
         if (!coords) return;
         captureCoordDetail(Object.assign({ source: 'perf-resource', ts: Date.now() }, coords));
         try {
-          window.dispatchEvent(new CustomEvent(WPI_COORD_EVENT, { detail: coords }));
-        } catch (_) {}
+        } catch (err) { console.error('[WPI] Failed to dispatch WPI_COORD_EVENT', err); }
       });
     };
     try {

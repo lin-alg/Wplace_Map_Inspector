@@ -104,7 +104,7 @@ function installPixelPerformanceTap() {
       if (!coords) return;
       captureCoord(coords);
       try { window.dispatchEvent(new CustomEvent(COORD_EVENT_NAME, { detail: Object.assign({ source: 'perf-resource', ts: Date.now() }, coords) })); }
-      catch (_) {}
+      catch (err) { console.warn('WPI coord event dispatch failed', err); }
     });
   };
   try {
