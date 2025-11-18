@@ -21,14 +21,44 @@
       box-sizing: border-box;
       font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;
     }
-    .panel {
-      position: relative;
-      width: 420px;
-      max-width: calc(100vw - 40px);
-      height: 560px;
+    .coord-rowset {
       display: flex;
       flex-direction: column;
-      background: rgba(47,51,51,0.88);
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .coord-row {
+      display: grid;
+      grid-template-columns: auto repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .coord-tag {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 16px;
+      background: rgba(160,184,239,0.15);
+      border: 1px solid rgba(160,184,239,0.3);
+      color: #A0B8EF;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 18px;
+      margin-top: 6px;
+    }
+    .panel {
+      position: relative;
+      z-index: 0;
+      display: flex;
+      flex-direction: column;
+      width: 480px;
+      max-width: calc(100vw - 32px);
+      max-height: 580px;
+      background: rgba(255,255,255,0.04);
       color: #FEF4F4;
       border-radius: 22px;
       box-shadow: 0 25px 45px rgba(0,0,0,0.4);
@@ -36,12 +66,24 @@
       border: 1px solid rgba(255,255,255,0.12);
       backdrop-filter: blur(22px);
     }
+    .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: #2F3333;
+      z-index: -1;
+    }
+    .coord-row label {
+      font-size: 11px;
+      gap: 4px;
+    }
     .header {
       position: relative;
       display: flex;
       align-items: center;
       justify-content: flex-start;
-      padding: 12px 14px;
+      padding: 8px 12px;
+      min-height: 44px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
       cursor: grab;
       background: rgba(47,51,51,0.95);
@@ -51,7 +93,7 @@
       left: 50%;
       top: 50%;
       transform: translate(-50%, -50%);
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
       letter-spacing: 0.4px;
       max-width: calc(100% - 140px);
@@ -110,9 +152,77 @@
       backdrop-filter: blur(14px);
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
+    input[type="number"] {
+      padding-right: 38px;
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+    .coord-row input[type="number"] {
+      padding: 6px 8px;
+      padding-right: 38px;
+      font-size: 12px;
+    }
     input[type="number"]:focus, input[type="text"]:focus {
       border-color: #A0B8EF;
       box-shadow: 0 0 0 2px rgba(160,184,239,0.25);
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .num-input-wrap {
+      position: relative;
+      width: 100%;
+    }
+    .num-input-wrap input[type="number"] { width: 100%; }
+    .spinner-overlay {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      bottom: 4px;
+      width: 28px;
+      border-left: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: rgba(255,255,255,0.02);
+      backdrop-filter: blur(10px);
+    }
+    .coord-row .spinner-overlay {
+      top: 2px;
+      bottom: 2px;
+      border-radius: 8px;
+    }
+    .spinner-btn {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      color: #F0F6FF;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.15s ease, color 0.15s ease;
+      user-select: none;
+    }
+    .spinner-btn + .spinner-btn {
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .spinner-btn:hover {
+      background: rgba(160,184,239,0.18);
+      color: #ffffff;
+    }
+    .spinner-btn:active {
+      background: rgba(160,184,239,0.28);
+    }
+    .spinner-btn:focus {
+      outline: 1px solid rgba(160,184,239,0.5);
+      outline-offset: -2px;
     }
     .controls {
       display:flex;
@@ -152,6 +262,28 @@
     .log .info { color:#A0B8EF; }
     .log .warn { color:#F8E58C; }
     .log .error { color:#FF9A9A; }
+    .panel,
+    .body,
+    .log {
+      scrollbar-color: rgba(160,184,239,0.6) transparent;
+      scrollbar-width: thin;
+    }
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.05);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(160,184,239,0.65));
+      border-radius: 999px;
+      border: 1px solid rgba(47,51,51,0.6);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(160,184,239,0.8));
+    }
     .hidden { display:none; }
     .mini {
       width:260px;
@@ -176,7 +308,23 @@
       transition:background 0.2s ease, transform 0.2s ease;
     }
     #advToggle:hover { background: rgba(255,255,255,0.16); transform: translateY(-1px); }
-    .adv-grid-responsive { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .grid-span {
+      grid-column: 1 / -1;
+      margin-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      padding-top: 8px;
+    }
+    .adv-flex {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .base-template {
+      flex: 1;
+      min-width: 200px;
+    }
+    .base-template input { width: 100%; }
   `;
 
   const html = `
@@ -188,27 +336,34 @@
         </div>
       </div>
       <div class="body">
+        <div class="coord-rowset">
+          <div class="coord-row">
+            <span class="coord-tag">Start</span>
+            <label>Tl X<input id="startBlockX" type="number" value="0"></label>
+            <label>Tl Y<input id="startBlockY" type="number" value="0"></label>
+            <label>Px X<input id="startX" type="number" value="652"></label>
+            <label>Px Y<input id="startY" type="number" value="964"></label>
+          </div>
+          <div class="coord-row">
+            <span class="coord-tag">End</span>
+            <label>Tl X<input id="endBlockX" type="number" value="0"></label>
+            <label>Tl Y<input id="endBlockY" type="number" value="1"></label>
+            <label>Px X<input id="endX" type="number" value="670"></label>
+            <label>Px Y<input id="endY" type="number" value="23"></label>
+          </div>
+        </div>
         <div class="grid">
-          <label>start Tl X<input id="startBlockX" type="number" value="0"></label>
-          <label>start Tl Y<input id="startBlockY" type="number" value="0"></label>
-          <label>start Px X<input id="startX" type="number" value="652"></label>
-          <label>start Px Y<input id="startY" type="number" value="964"></label>
-          <label>end Tl X<input id="endBlockX" type="number" value="0"></label>
-          <label>end Tl Y<input id="endBlockY" type="number" value="1"></label>
-          <label>end Px X<input id="endX" type="number" value="670"></label>
-          <label>end Px Y<input id="endY" type="number" value="23"></label>
           <label>step X<input id="stepX" type="number" value="1" min="1"></label>
           <label>step Y<input id="stepY" type="number" value="1" min="1"></label>
-          <div style="grid-column:1 / -1; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
+          <div class="grid-span">
             <button id="advToggle" type="button">Show advanced ▾</button>
             <div id="advBody" style="margin-top:8px; display:none;">
-              <div class="adv-grid-responsive">
+              <div class="adv-flex">
                 <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
                 <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
                 <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1"></label>
                 <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
-                <label>BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
-                <label style="grid-column: 1 / -1;"></label>
+                <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
               </div>
             </div>
           </div>
