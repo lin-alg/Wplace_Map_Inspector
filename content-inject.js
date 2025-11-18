@@ -728,25 +728,171 @@
   }
   function toGlobalUI(bx, by, lx, ly, BLOCK_SIZE) { return { gx: bx * BLOCK_SIZE + lx, gy: by * BLOCK_SIZE + ly }; }
 
-  // pick coords from page (keeps original logic)
-  async function pickCoordsFromPage() {
+  const WPI_COORD_EVENT = 'wpi-coords';
+  let lastCoordFromFetch = null;
+
+  function captureCoordDetail(detail) {
+    if (!detail) return;
+    const tlX = Number(detail.tlX ?? detail.tileX ?? detail.tx);
+    const tlY = Number(detail.tlY ?? detail.tileY ?? detail.ty);
+    const pxX = Number(detail.pxX ?? detail.pixelX ?? detail.px);
+    const pxY = Number(detail.pxY ?? detail.pixelY ?? detail.py);
+    if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+      lastCoordFromFetch = { tlX, tlY, pxX, pxY, source: detail.source || 'fetch-hook', ts: detail.ts || Date.now() };
+    }
+  }
+
+  (function initCoordBridge(){
+    if (window.__WPI_PANEL_COORD_BOUND__) return;
+    window.__WPI_PANEL_COORD_BOUND__ = true;
+    window.addEventListener(WPI_COORD_EVENT, (evt) => {
+      try { captureCoordDetail(evt.detail); } catch (e) { console.warn('[WPI] coord event error', e); }
+    });
+  })();
+
+  (function ensureFetchTap(){
+    if (window.__WPI_FETCH_TAP_REQUESTED__) return;
+    window.__WPI_FETCH_TAP_REQUESTED__ = true;
+    const script = document.createElement('script');
+    script.textContent = `(() => {
+      if (window.__WPI_FETCH_TAP_INSTALLED__ || !window.fetch) return;
+      window.__WPI_FETCH_TAP_INSTALLED__ = true;
+      const originalFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const response = await originalFetch.apply(this, args);
+        try {
+          const req = args[0];
+          const url = req instanceof Request ? req.url : req;
+          if (typeof url === 'string' && url.includes('/pixel/')) {
+            const cleanUrl = url.split('#')[0];
+            const [pathPart, queryPart = ''] = cleanUrl.split('?');
+            const segments = pathPart.split('/').filter(Boolean);
+            const len = segments.length;
+            const tlX = Number(segments[len - 2]);
+            const tlY = Number(segments[len - 1]);
+            const params = new URLSearchParams(queryPart);
+            const pxX = Number(params.get('x'));
+            const pxY = Number(params.get('y'));
+            if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+              window.dispatchEvent(new CustomEvent('${WPI_COORD_EVENT}', { detail: { tlX, tlY, pxX, pxY, source: 'fetch-hook', ts: Date.now() } }));
+            }
+          }
+        } catch (err) {
+          console.warn('WPI fetch tap error', err);
+        }
+        return response;
+      };
+    })();`;
+    (document.documentElement || document.head || document.body).appendChild(script);
+    script.remove();
+  })();
+
+  function parseBlueMarbleHud(rawText) {
+    if (!rawText) return null;
+    const re = /Tl\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Tl\s*Y\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*Y\s*[:：]\s*([\-\d.]+)/i;
+    const match = re.exec(rawText);
+    if (!match) return null;
+    return {
+      tlX: Number(match[1]),
+      tlY: Number(match[2]),
+      pxX: Number(match[3]),
+      pxY: Number(match[4])
+    };
+  }
+
+  function parseDisplaySpan() {
+    try {
+      const el = document.getElementById('bm-display-coords');
+      if (!el || !el.textContent) return null;
+      return parseBlueMarbleHud(el.textContent);
+    } catch (e) { return null; }
+  }
+
+  function parseBmInputs() {
+    const tx = document.getElementById('bm-input-tx');
+    const ty = document.getElementById('bm-input-ty');
+    const px = document.getElementById('bm-input-px');
+    const py = document.getElementById('bm-input-py');
+    if (!tx || !ty || !px || !py) return null;
+    const tlX = Number(tx.value);
+    const tlY = Number(ty.value);
+    const pxX = Number(px.value);
+    const pxY = Number(py.value);
+    if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) return { tlX, tlY, pxX, pxY };
+    return null;
+  }
+
+  function readHudCoords() {
     try {
       const el = document.getElementById('bm-h') || document.querySelector('[id="bm-h"]');
-      const raw = el ? (el.innerText || el.textContent || '') : '';
-      const coords = typeof parseBmH === 'function' ? parseBmH(raw) : null;
-      if (coords) return { ok: true, coords };
-    } catch (e) {}
+      return parseBlueMarbleHud(el ? (el.innerText || el.textContent || '') : '');
+    } catch (e) { return null; }
+  }
+
+  function extractCoordsFromPixelUrl(url) {
+    if (!url || url.indexOf('/pixel/') === -1) return null;
     try {
-      return await new Promise(resolve => {
+      const cleanUrl = url.split('#')[0];
+      const [pathPart, queryPart = ''] = cleanUrl.split('?');
+      const segments = pathPart.split('/').filter(Boolean);
+      if (segments.length < 2) return null;
+      const tlX = Number(segments[segments.length - 2]);
+      const tlY = Number(segments[segments.length - 1]);
+      const params = new URLSearchParams(queryPart);
+      const pxX = Number(params.get('x'));
+      const pxY = Number(params.get('y'));
+      if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+        return { tlX, tlY, pxX, pxY };
+      }
+    } catch (err) {}
+    return null;
+  }
+
+  function installPixelPerformanceTap() {
+    if (window.__WPI_PIXEL_PERF_TAP__) return;
+    window.__WPI_PIXEL_PERF_TAP__ = true;
+    const handleEntries = (entries) => {
+      entries.forEach(entry => {
+        if (!entry || !entry.name) return;
+        const coords = extractCoordsFromPixelUrl(entry.name);
+        if (!coords) return;
+        captureCoordDetail(Object.assign({ source: 'perf-resource', ts: Date.now() }, coords));
         try {
-          chrome.runtime.sendMessage({ type: 'grabCoords' }, resp => {
-            resolve(resp || { ok: false, error: 'no-response' });
-          });
-        } catch (err) {
-          resolve({ ok: false, error: String(err) });
-        }
+          window.dispatchEvent(new CustomEvent(WPI_COORD_EVENT, { detail: coords }));
+        } catch (_) {}
       });
-    } catch (e) { return { ok: false, error: String(e) }; }
+    };
+    try {
+      const existing = performance.getEntriesByType('resource') || [];
+      handleEntries(existing);
+    } catch (err) { console.warn('[WPI] perf tap preload failed', err); }
+    try {
+      const observer = new PerformanceObserver(list => handleEntries(list.getEntries()));
+      observer.observe({ entryTypes: ['resource'] });
+    } catch (err) { console.warn('[WPI] perf tap observe failed', err); }
+  }
+  installPixelPerformanceTap();
+
+  function resolveLatestCoords() {
+    const hud = readHudCoords();
+    if (hud) return hud;
+    if (lastCoordFromFetch) return Object.assign({}, lastCoordFromFetch);
+    const display = parseDisplaySpan();
+    if (display) return display;
+    const inputs = parseBmInputs();
+    if (inputs) return inputs;
+    return null;
+  }
+
+  // pick coords from page using multiple fallbacks
+  async function pickCoordsFromPage() {
+    try {
+      const coords = resolveLatestCoords();
+      if (coords) return { ok: true, coords };
+      return { ok: false, error: 'no-coords' };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
   }
 
   async function applyPickedCoords(kind) {

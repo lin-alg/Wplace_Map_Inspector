@@ -13,16 +13,160 @@ function parseBmH(text) {
   return { tlX: Number(m[1]), tlY: Number(m[2]), pxX: Number(m[3]), pxY: Number(m[4]) };
 }
 
+const COORD_EVENT_NAME = 'wpi-coords';
+let lastCoordSnapshot = null;
+
+function captureCoord(detail) {
+  if (!detail) return;
+  const tlX = Number(detail.tlX ?? detail.tileX ?? detail.tx);
+  const tlY = Number(detail.tlY ?? detail.tileY ?? detail.ty);
+  const pxX = Number(detail.pxX ?? detail.pixelX ?? detail.px);
+  const pxY = Number(detail.pxY ?? detail.pixelY ?? detail.py);
+  if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+    lastCoordSnapshot = { tlX, tlY, pxX, pxY, source: detail.source || 'fetch-hook', ts: detail.ts || Date.now() };
+  }
+}
+
+function initCoordEventTap() {
+  if (window.__WPI_COORD_EVENT_BOUND__) return;
+  window.__WPI_COORD_EVENT_BOUND__ = true;
+  window.addEventListener(COORD_EVENT_NAME, (evt) => {
+    try { captureCoord(evt.detail); } catch (e) { console.warn('WPI coord event error', e); }
+  });
+}
+
+function injectFetchTap() {
+  if (window.__WPI_FETCH_TAP_REQUESTED__) return;
+  window.__WPI_FETCH_TAP_REQUESTED__ = true;
+  const script = document.createElement('script');
+  script.textContent = `(() => {
+    if (window.__WPI_FETCH_TAP_INSTALLED__ || !window.fetch) return;
+    window.__WPI_FETCH_TAP_INSTALLED__ = true;
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch.apply(this, args);
+      try {
+        const req = args[0];
+        const url = req instanceof Request ? req.url : req;
+        if (typeof url === 'string' && url.includes('/pixel/')) {
+          const cleanUrl = url.split('#')[0];
+          const [pathPart, queryPart = ''] = cleanUrl.split('?');
+          const segments = pathPart.split('/').filter(Boolean);
+          const len = segments.length;
+          const tlX = Number(segments[len - 2]);
+          const tlY = Number(segments[len - 1]);
+          const params = new URLSearchParams(queryPart);
+          const pxX = Number(params.get('x'));
+          const pxY = Number(params.get('y'));
+          if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+            window.dispatchEvent(new CustomEvent('${COORD_EVENT_NAME}', { detail: { tlX, tlY, pxX, pxY, source: 'fetch-hook', ts: Date.now() } }));
+          }
+        }
+      } catch (err) {
+        console.warn('WPI fetch tap error', err);
+      }
+      return response;
+    };
+  })();`;
+  (document.documentElement || document.head || document.body).appendChild(script);
+  script.remove();
+}
+
+initCoordEventTap();
+injectFetchTap();
+
+function extractCoordsFromPixelUrl(url) {
+  if (!url || url.indexOf('/pixel/') === -1) return null;
+  try {
+    const cleanUrl = url.split('#')[0];
+    const [pathPart, queryPart = ''] = cleanUrl.split('?');
+    const segments = pathPart.split('/').filter(Boolean);
+    if (segments.length < 2) return null;
+    const tlX = Number(segments[segments.length - 2]);
+    const tlY = Number(segments[segments.length - 1]);
+    const params = new URLSearchParams(queryPart);
+    const pxX = Number(params.get('x'));
+    const pxY = Number(params.get('y'));
+    if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+      return { tlX, tlY, pxX, pxY };
+    }
+  } catch (err) {}
+  return null;
+}
+
+function installPixelPerformanceTap() {
+  if (!('PerformanceObserver' in window) || window.__WPI_PIXEL_PERF_TAP__) return;
+  window.__WPI_PIXEL_PERF_TAP__ = true;
+  const handleEntries = (entries) => {
+    entries.forEach(entry => {
+      if (!entry || !entry.name) return;
+      const coords = extractCoordsFromPixelUrl(entry.name);
+      if (!coords) return;
+      captureCoord(coords);
+      try { window.dispatchEvent(new CustomEvent(COORD_EVENT_NAME, { detail: Object.assign({ source: 'perf-resource', ts: Date.now() }, coords) })); }
+      catch (_) {}
+    });
+  };
+  try {
+    const existing = performance.getEntriesByType('resource') || [];
+    handleEntries(existing);
+  } catch (err) {
+    console.warn('WPI perf preload failed', err);
+  }
+  try {
+    const observer = new PerformanceObserver(list => handleEntries(list.getEntries()));
+    observer.observe({ entryTypes: ['resource'] });
+  } catch (err) {
+    console.warn('WPI perf observer failed', err);
+  }
+}
+
+installPixelPerformanceTap();
+
+function parseBmDisplaySpan() {
+  const el = document.getElementById('bm-display-coords');
+  if (!el || !el.textContent) return null;
+  return parseBmH(el.textContent);
+}
+
+function parseBmInputs() {
+  const tx = document.getElementById('bm-input-tx');
+  const ty = document.getElementById('bm-input-ty');
+  const px = document.getElementById('bm-input-px');
+  const py = document.getElementById('bm-input-py');
+  if (!tx || !ty || !px || !py) return null;
+  const tlX = Number(tx.value);
+  const tlY = Number(ty.value);
+  const pxX = Number(px.value);
+  const pxY = Number(py.value);
+  if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) return { tlX, tlY, pxX, pxY, source: 'bm-inputs' };
+  return null;
+}
+
+function getBestCoords() {
+  const hud = (() => {
+    try {
+      const el = document.getElementById('bm-h');
+      return parseBmH(el ? (el.innerText || el.textContent || '') : '');
+    } catch (_) { return null; }
+  })();
+  if (hud) return hud;
+  if (lastCoordSnapshot) return Object.assign({}, lastCoordSnapshot);
+  const display = parseBmDisplaySpan();
+  if (display) return display;
+  const inputs = parseBmInputs();
+  if (inputs) return inputs;
+  return null;
+}
+
 /* grabCoords: existing interface for pick */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
   if (msg.type === 'grabCoords') {
     try {
-      const el = document.getElementById('bm-h');
-      const raw = el ? (el.innerText || el.textContent) : null;
-      const coords = parseBmH(raw);
+      const coords = getBestCoords();
       if (!coords) {
-        sendResponse({ ok: false, error: 'parse failed', raw });
+        sendResponse({ ok: false, error: 'no-coords' });
         return;
       }
       sendResponse({ ok: true, coords });
