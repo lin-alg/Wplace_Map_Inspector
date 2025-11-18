@@ -170,7 +170,7 @@ function escapeCsvValue(value) {
 }
 
 function recordsToCsv(records) {
-  const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByUsername','paintedByRaw'];
+  const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByRaw'];
   const lines = [header.join(',')];
   (records || []).forEach(rec => {
     const pb = rec && rec.paintedBy ? rec.paintedBy : {};
@@ -182,7 +182,6 @@ function recordsToCsv(records) {
       rec && rec.pixels,
       pb && pb.id,
       pb && pb.name,
-      pb && (pb.username || pb.handle || pb.tag),
       pb ? JSON.stringify(pb) : ''
     ].map(escapeCsvValue);
     lines.push(row.join(','));

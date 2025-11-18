@@ -278,8 +278,8 @@ function injectFetcherScript(payload) {
 "      return { blockX, blockB, lx, ly };\n" +
 "    }\n" +
 "    function escapeCsvValue(value){ if (value === null || value === undefined) return ''; const str = String(value); return /[\",\n]/.test(str) ? ('\"' + str.replace(/\"/g,'\"\"') + '\"') : str; }\n" +
-"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByUsername','paintedByRaw']; const lines = [header.join(',')];\n" +
-"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name, pb && (pb.username || pb.handle || pb.tag), pb ? JSON.stringify(pb) : '']; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
+"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByRaw']; const lines = [header.join(',')];\n" +
+"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name, pb ? JSON.stringify(pb) : '']; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
 "      return lines.join('\\n'); }\n" +
 "\n" +
 "    // normalize start/end first to handle px overflow (carry into blocks)\n" +
