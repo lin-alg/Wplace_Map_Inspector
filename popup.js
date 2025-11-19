@@ -129,11 +129,16 @@ const inputs = {
   MAX_RPS: document.getElementById('MAX_RPS'),
   BATCH_SIZE: document.getElementById('BATCH_SIZE'),
   BATCH_DELAY_MINUTES: document.getElementById('BATCH_DELAY_MINUTES'),
-  BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE')
+  BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE'),
+  VERBOSE_MODE: document.getElementById('VERBOSE_MODE'),
+  VERBOSE_PATH: document.getElementById('VERBOSE_PATH')
 };
 
 const pickStartBtn = document.getElementById('pickStartBtn');
 const pickEndBtn = document.getElementById('pickEndBtn');
+const verbosePathRow = document.getElementById('verbosePathRow');
+const verbosePathPreview = document.getElementById('verbosePathPreview');
+const selectVerbosePathBtn = document.getElementById('selectVerbosePathBtn');
 const SETTINGS_KEY = 'pxf_settings';
 const RUN_STATE_KEY = '__PXF_RUNNING__';
 const STOP_FLAG_KEY = '__PIXEL_FETCHER_STOP__';
@@ -244,7 +249,9 @@ function collectSettingsFromUI() {
       MAX_RPS: Number(inputs.MAX_RPS?.value || 6),
       BATCH_SIZE: Math.max(1, Number(inputs.BATCH_SIZE?.value || 10)),
       BATCH_DELAY_MINUTES: Math.max(0, Number(inputs.BATCH_DELAY_MINUTES?.value || 0.045)),
-      BASE_TEMPLATE: (inputs.BASE_TEMPLATE?.value || '').trim()
+      BASE_TEMPLATE: (inputs.BASE_TEMPLATE?.value || '').trim(),
+      VERBOSE_MODE: !!inputs.VERBOSE_MODE?.checked,
+      VERBOSE_PATH: (inputs.VERBOSE_PATH?.value || '').trim()
     };
   } catch (e) {
     console.warn('[POPUP] collectSettingsFromUI error', e);
@@ -252,7 +259,8 @@ function collectSettingsFromUI() {
       startBlockX: 0, startBlockY: 0, startX: 0, startY: 0,
       endBlockX: 0, endBlockY: 0, endX: 0, endY: 0,
       stepX: 1, stepY: 1, CONCURRENCY: 4, MAX_RPS: 6,
-      BATCH_SIZE: 10, BATCH_DELAY_MINUTES: 0.045, BASE_TEMPLATE: ''
+      BATCH_SIZE: 10, BATCH_DELAY_MINUTES: 0.045, BASE_TEMPLATE: '',
+      VERBOSE_MODE: false, VERBOSE_PATH: ''
     };
   }
 }
@@ -288,11 +296,83 @@ async function saveSettings() {
 async function loadSettings() {
   try {
     const cfg = await api.storageGet(SETTINGS_KEY);
-    if (cfg) Object.keys(inputs).forEach(k => { if (cfg[k] != null && inputs[k]) inputs[k].value = String(cfg[k]); });
+    if (cfg) {
+      Object.keys(inputs).forEach(k => {
+        const el = inputs[k];
+        if (!el || cfg[k] == null) return;
+        if (el.type === 'checkbox') el.checked = !!cfg[k];
+        else el.value = String(cfg[k]);
+      });
+    }
+    refreshVerboseControls();
+    refreshVerbosePathPreview();
   } catch (e) { console.warn('[POPUP] loadSettings error', e); }
 }
 
 Object.values(inputs).forEach(el => { if (!el) return; el.addEventListener('input', scheduleSaveSettings); });
+if (inputs.VERBOSE_MODE) {
+  inputs.VERBOSE_MODE.addEventListener('change', () => {
+    refreshVerboseControls();
+    scheduleSaveSettings();
+  });
+}
+if (inputs.VERBOSE_PATH) {
+  inputs.VERBOSE_PATH.addEventListener('input', refreshVerbosePathPreview);
+}
+
+if (selectVerbosePathBtn) {
+  selectVerbosePathBtn.addEventListener('click', async () => {
+    if (selectVerbosePathBtn.disabled) return;
+    selectVerbosePathBtn.disabled = true;
+    try {
+      const streaming = window.WPIStreaming;
+      if (!streaming || typeof streaming.pickVerboseTarget !== 'function') {
+        log('warn', '未加载流式写入模块，无法选择保存路径');
+        return;
+      }
+      const res = await streaming.pickVerboseTarget(inputs.VERBOSE_PATH?.value || '');
+      if (!res || !res.ok) {
+        if (!res?.cancelled) log('warn', '选择保存路径失败', res && res.error ? { error: res.error } : undefined);
+        return;
+      }
+      if (inputs.VERBOSE_PATH) inputs.VERBOSE_PATH.value = res.label;
+      refreshVerbosePathPreview();
+      await saveSettings();
+      if (res.handle) {
+        try {
+          const storeResp = await streaming.registerHandle(res.handle, {
+            label: res.label,
+            via: res.via,
+            permissionGranted: res.permissionGranted !== false
+          });
+          if (!storeResp || !storeResp.ok) {
+            log('warn', '注册文件写入句柄失败', storeResp && storeResp.error ? { error: storeResp.error } : undefined);
+          }
+        } catch (err) {
+          console.warn('[POPUP] share verbose handle failed', err);
+          log('warn', '无法将文件写入句柄传递给后台', { error: String(err) });
+        }
+      }
+      log('info', '已选择 verbose 保存路径', { target: res.label, via: res.via, streaming: !!res.handle });
+    } catch (err) {
+      console.warn('[POPUP] pick verbose path failed', err);
+      log('error', '保存路径选择失败', { error: String(err) });
+    } finally {
+      selectVerbosePathBtn.disabled = false;
+    }
+  });
+}
+
+function refreshVerboseControls() {
+  const enabled = !!inputs.VERBOSE_MODE?.checked;
+  if (verbosePathRow) verbosePathRow.classList.toggle('hidden', !enabled);
+}
+
+function refreshVerbosePathPreview() {
+  if (!verbosePathPreview) return;
+  const val = (inputs.VERBOSE_PATH?.value || '').trim();
+  verbosePathPreview.textContent = val || '未选择';
+}
 if (clearBtn) clearBtn.addEventListener('click', () => { if (logEl) logEl.innerHTML = ''; });
 
 /* Helper: ensure content script is present and send a message; inject main.js if necessary */
@@ -510,7 +590,18 @@ if (startBtn) startBtn.addEventListener('click', async () => {
   await saveSettings();
   const cfg = collectSettingsFromUI();
   const estimated = estimateCountFromCfg(cfg);
-  log('info', 'Starting job via background', { summary: `blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`, estimatedCount: estimated });
+  const verboseEnabled = !!cfg.VERBOSE_MODE;
+  const verbosePathSet = !!(cfg.VERBOSE_PATH && cfg.VERBOSE_PATH.length);
+  if (verboseEnabled && !verbosePathSet) {
+    log('warn', 'Verbose 模式已启用，但尚未选择保存路径；当前将回退为浏览器下载（TODO: File System Access 写入）');
+  }
+  const summaryPayload = {
+    summary: `blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`,
+    estimatedCount: estimated,
+    verboseEnabled,
+    verbosePathSet
+  };
+  log('info', 'Starting job via background', summaryPayload);
 
   try { console.log('[POPUP] sending start cfg:', cfg); } catch (e) {}
 

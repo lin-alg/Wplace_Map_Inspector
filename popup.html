@@ -40,6 +40,17 @@
             <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
             <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
           </div>
+          <div class="adv-row verbose-row">
+            <label class="checkbox-label">
+              <input id="VERBOSE_MODE" type="checkbox">
+              <span>Verbose mode（逐像素导出 CSV）</span>
+            </label>
+            <div id="verbosePathRow" class="verbose-path hidden">
+              <button id="selectVerbosePathBtn" type="button">选择保存路径</button>
+              <span id="verbosePathPreview">未选择</span>
+            </div>
+            <input id="VERBOSE_PATH" type="text" hidden>
+          </div>
         </div>
       </div>
     </div>
@@ -55,6 +66,7 @@
     <div id="log" class="log" aria-live="polite"></div>
   </div>
 
+  <script src="streaming-shared.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

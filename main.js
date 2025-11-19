@@ -214,6 +214,8 @@ function injectFetcherScript(payload) {
 "    const LOG_INTERVAL = Number(CONFIG.LOG_INTERVAL != null ? CONFIG.LOG_INTERVAL : 50);\n" +
 "    const STATUS_INTERVAL_MS = Number(CONFIG.STATUS_INTERVAL_MS != null ? CONFIG.STATUS_INTERVAL_MS : 5000);\n" +
 "    const BLOCK_SIZE = Number(CONFIG.BLOCK_SIZE != null ? CONFIG.BLOCK_SIZE : 1000);\n" +
+"    const VERBOSE_MODE = !!CONFIG.VERBOSE_MODE;\n" +
+"    const VERBOSE_PATH = (typeof CONFIG.VERBOSE_PATH === 'string') ? CONFIG.VERBOSE_PATH : '';\n" +
 "    const BASE_TEMPLATE = (typeof CONFIG.BASE_TEMPLATE === 'string' && CONFIG.BASE_TEMPLATE.trim()) ? CONFIG.BASE_TEMPLATE.trim() : null;\n" +
 "    const BASE_TPL = (blockX, blockB, lx, ly) => {\n" +
 "      if (BASE_TEMPLATE) {\n" +
@@ -278,8 +280,11 @@ function injectFetcherScript(payload) {
 "      return { blockX, blockB, lx, ly };\n" +
 "    }\n" +
 "    function escapeCsvValue(value){ if (value === null || value === undefined) return ''; const str = String(value); return /[\",\n]/.test(str) ? ('\"' + str.replace(/\"/g,'\"\"') + '\"') : str; }\n" +
-"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName','paintedByRaw']; const lines = [header.join(',')];\n" +
-"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name, pb ? JSON.stringify(pb) : '']; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
+"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName']; const lines = [header.join(',')];\n" +
+"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name]; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
+"      return lines.join('\\n'); }\n" +
+"    function verboseEntriesToCsv(entries){ if (!entries || !entries.length) return ''; const header = ['blockX','blockB','x','y','paintedById','paintedByName','paintedByAlliance']; const lines = [header.join(',')];\n" +
+"      entries.forEach(entry => { const pb = entry && entry.paintedBy ? entry.paintedBy : {}; const row = [entry && entry.blockX, entry && entry.blockB, entry && entry.x, entry && entry.y, pb && pb.id, pb && pb.name, pb && (pb.alliance || pb.guild || '')]; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
 "      return lines.join('\\n'); }\n" +
 "\n" +
 "    // normalize start/end first to handle px overflow (carry into blocks)\n" +
@@ -312,6 +317,8 @@ function injectFetcherScript(payload) {
 "    var byId = new Map();\n" +
 "    var uniqueNonZeroIds = new Set();\n" +
 "    var done = 0; var stats = { ok:0, fail:0, _429:0, _403:0, err:0 };\n" +
+"    var verboseEntries = VERBOSE_MODE ? [] : null;\n" +
+"    function pushVerboseEntry(coord, paintedBy){ if (!VERBOSE_MODE || !verboseEntries) return; try { var pbClone = (paintedBy && typeof paintedBy === 'object') ? Object.assign({}, paintedBy) : paintedBy; if (pbClone && ('picture' in pbClone)) delete pbClone.picture; verboseEntries.push({ blockX: coord.blockX, blockB: coord.blockB, x: coord.x, y: coord.y, sampledAt: Date.now(), paintedBy: pbClone }); } catch (err) { console.warn('[PIXEL_FETCHER] pushVerboseEntry failed', err); } }\n" +
 "    function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }\n" +
 "\n" +
 "    var statusTimer = null; function startStatusTimer(t0){ if (statusTimer) return; statusTimer = setInterval(function(){ var elapsed = ((performance.now() - t0)/1000).toFixed(1); var errRatio = ((stats._429 + stats._403) / Math.max(1, done)); emit('status', { elapsed: elapsed, done: done, total: coords.length, uniqueIds: uniqueNonZeroIds.size, records: Array.from(byId.values()).length, stats: stats, errRatio: errRatio }); }, STATUS_INTERVAL_MS); }\n" +
@@ -356,6 +363,7 @@ function injectFetcherScript(payload) {
 "                }\n" +
 "              }\n" +
 "            }\n" +
+"            if (VERBOSE_MODE && verboseEntries) pushVerboseEntry(coord, pb);\n" +
 "            stats.ok++; return { ok:true, status:200 };\n" +
 "          } else {\n" +
 "            stats.fail++; if (resp.status === 429) stats._429++; if (resp.status === 403) stats._403++;\n" +
@@ -385,6 +393,7 @@ function injectFetcherScript(payload) {
 "    emit('info', { text: '开始抓取 total=' + coords.length + ' concurrency=' + CONCURRENCY + ' max_rps=' + MAX_RPS });\n" +
 "    const t0 = performance.now();\n" +
 "    emit('info', { text: '[PIXEL_FETCHER] estimated samples: ' + coords.length, samples: coords.length });\n" +
+"    if (VERBOSE_MODE && !VERBOSE_PATH) emit('warn', { text: 'Verbose 模式未绑定保存路径，暂以浏览器下载方式导出逐像素 CSV（TODO: File System Access）' });\n" +
 "    await runAll(t0);\n" +
 "    const elapsed = ((performance.now() - t0)/1000).toFixed(1);\n" +
 "    try { localStorage.removeItem('__PIXEL_FETCHER_STOP__'); } catch (e) {}\n" +
@@ -400,6 +409,17 @@ function injectFetcherScript(payload) {
 "        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); emit('info', { text: '已下载 ' + fname, lines: recordsArr.length });\n" +
 "      } catch (e) { emit('error', { text: '导出失败', err: String(e) }); }\n" +
 "    } else { emit('info', { text: '未收集到任何记录' }); }\n" +
+"    if (VERBOSE_MODE && verboseEntries && verboseEntries.length) {\n" +
+"      try {\n" +
+"        const verboseCsv = verboseEntriesToCsv(verboseEntries);\n" +
+"        const verboseName = `auto_fetch_verbose_${minGX||'g'}_${minGY||'g'}_to_${maxGX||'g'}_${maxGY||'g'}_step${stepX}x${stepY}.csv`;\n" +
+"        const vb = new Blob([verboseCsv], { type: 'text/csv;charset=utf-8' });\n" +
+"        const va = document.createElement('a'); va.href = URL.createObjectURL(vb); va.download = verboseName; document.body.appendChild(va); va.click(); va.remove();\n" +
+"        emit('info', { text: '已下载逐像素 CSV ' + verboseName, lines: verboseEntries.length });\n" +
+"      } catch (e) {\n" +
+"        emit('warn', { text: '逐像素 CSV 导出失败', err: String(e) });\n" +
+"      }\n" +
+"    }\n" +
 "\n" +
 "  } catch (err) { window.postMessage({ __PIXEL_FETCHER__: true, evt: 'error', text: '注入脚本内部异常', err: String(err) }, '*'); }\n" +
 "})();\n";

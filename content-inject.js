@@ -325,6 +325,38 @@
       min-width: 200px;
     }
     .base-template input { width: 100%; }
+    .adv-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .verbose-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+   }
+    .verbose-toggle input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #A0B8EF;
+    }
+    .verbose-path-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+      color: #DDE6FF;
+    }
+    .verbose-path-row span {
+      max-width: 240px;
+      word-break: break-all;
+      opacity: 0.85;
+    }
   `;
 
   const html = `
@@ -364,6 +396,17 @@
                 <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1"></label>
                 <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
                 <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
+              </div>
+              <div class="adv-row">
+                <label class="verbose-toggle">
+                  <input id="VERBOSE_MODE" type="checkbox">
+                  <span>Verbose mode（逐像素导出 CSV）</span>
+                </label>
+                <div id="verbosePathRow" class="verbose-path-row hidden">
+                  <button id="verbosePathBtn" type="button">选择保存路径</button>
+                  <span id="verbosePathPreview">未选择</span>
+                </div>
+                <input id="VERBOSE_PATH" type="text" style="display:none;">
               </div>
             </div>
           </div>
@@ -407,9 +450,14 @@
   const pickStartBtn = $id('pickStartBtn');
   const pickEndBtn = $id('pickEndBtn');
   const logEl = $id('log');
+  const verboseToggle = $id('VERBOSE_MODE');
+  const verbosePathRow = $id('verbosePathRow');
+  const verbosePathPreview = $id('verbosePathPreview');
+  const verbosePathBtn = $id('verbosePathBtn');
+  const verbosePathInput = $id('VERBOSE_PATH');
 
   // fields map
-  const fields = ['startBlockX','startBlockY','startX','startY','endBlockX','endBlockY','endX','endY','stepX','stepY','CONCURRENCY','MAX_RPS','BATCH_SIZE','BATCH_DELAY_MINUTES','BASE_TEMPLATE'];
+  const fields = ['startBlockX','startBlockY','startX','startY','endBlockX','endBlockY','endX','endY','stepX','stepY','CONCURRENCY','MAX_RPS','BATCH_SIZE','BATCH_DELAY_MINUTES','BASE_TEMPLATE','VERBOSE_MODE','VERBOSE_PATH'];
   const inputs = {};
   fields.forEach(f => inputs[f] = $id(f));
 
@@ -649,6 +697,88 @@
     });
   }
 
+  function refreshVerboseControls() {
+    const enabled = !!(verboseToggle && verboseToggle.checked);
+    if (verbosePathRow) verbosePathRow.classList.toggle('hidden', !enabled);
+  }
+  function refreshVerbosePathPreview() {
+    if (!verbosePathPreview) return;
+    const text = (verbosePathInput && verbosePathInput.value ? verbosePathInput.value : '').trim();
+    verbosePathPreview.textContent = text || '未选择';
+  }
+  if (verboseToggle) {
+    verboseToggle.addEventListener('change', () => {
+      refreshVerboseControls();
+      storageSet('pxf_settings', collectSettingsFromUI());
+    });
+  }
+  if (verbosePathInput) {
+    verbosePathInput.addEventListener('input', () => {
+      refreshVerbosePathPreview();
+      storageSet('pxf_settings', collectSettingsFromUI());
+    });
+  }
+
+  let activePickerSessionId = null;
+  let pickerTimeoutRef = null;
+
+  function clearPickerSession() {
+    if (pickerTimeoutRef) {
+      clearTimeout(pickerTimeoutRef);
+      pickerTimeoutRef = null;
+    }
+    activePickerSessionId = null;
+    if (verbosePathBtn) verbosePathBtn.disabled = false;
+  }
+
+  if (!window.__WPI_STREAM_PICKER_MSG_BOUND__) {
+    window.__WPI_STREAM_PICKER_MSG_BOUND__ = true;
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== 'stream-picker-result') return;
+      if (!activePickerSessionId || msg.sessionId !== activePickerSessionId) return;
+      clearPickerSession();
+      if (msg.status === 'success') {
+        if (verbosePathInput) verbosePathInput.value = msg.label || '';
+        refreshVerbosePathPreview();
+        storageSet('pxf_settings', collectSettingsFromUI());
+        log('info', '已选择 verbose 保存路径（扩展窗口）', { target: msg.label, via: msg.via, streaming: !!msg.streaming });
+        if (msg.streaming) {
+          log('info', '写入监控窗口需要保持打开，作为逐像素写入器', { sessionId: msg.sessionId });
+        }
+        if (!msg.streaming) log('warn', '当前环境无法授予文件句柄，已仅保存路径描述');
+      } else if (msg.status === 'error') {
+        log('error', '扩展文件选择器失败', { error: msg.error || 'unknown' });
+      } else if (msg.interrupted) {
+        log('warn', '写入监控窗口已关闭，verbose 写入已停止', { reason: msg.reason || 'window-closed' });
+      } else {
+        log('info', '已取消 verbose 文件选择');
+      }
+    });
+  }
+
+  if (verbosePathBtn) {
+    verbosePathBtn.addEventListener('click', async () => {
+      if (verbosePathBtn.disabled) return;
+      verbosePathBtn.disabled = true;
+      activePickerSessionId = `wpi_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      pickerTimeoutRef = setTimeout(() => {
+        if (!activePickerSessionId) return;
+        log('warn', '文件选择窗口似乎没有响应，可重试或在插件弹窗中设置路径');
+        clearPickerSession();
+      }, 120000);
+      chrome.runtime.sendMessage({ type: 'open-stream-picker', sessionId: activePickerSessionId }, resp => {
+        const lastErr = chrome.runtime.lastError;
+        if (lastErr || !resp || !resp.ok) {
+          const errMsg = lastErr ? (lastErr.message || 'runtime-error') : (resp && resp.error ? resp.error : 'failed');
+          log('error', '无法打开扩展文件选择窗口，请检查权限或在插件弹窗中设置路径', { error: errMsg });
+          clearPickerSession();
+          return;
+        }
+        log('info', '已打开扩展文件选择窗口，请在弹出的窗口中完成授权');
+      });
+    });
+  }
+
   // panel drag support — only start dragging when user targets the header itself, not its controls
   (function(){
     let dragging = false, startX=0, startY=0, origLeft=0, origTop=0;
@@ -694,10 +824,14 @@
         const el = inputs[f];
         if (!el) return;
         if (el.type === 'number') cfg[f] = Number(el.value || 0);
+        else if (el.type === 'checkbox') cfg[f] = !!el.checked;
         else cfg[f] = (el.value || '').toString();
       });
       cfg.stepX = Math.max(1, Number(cfg.stepX || 1));
       cfg.stepY = Math.max(1, Number(cfg.stepY || 1));
+      if (typeof cfg.BASE_TEMPLATE === 'string') cfg.BASE_TEMPLATE = cfg.BASE_TEMPLATE.trim();
+      if (typeof cfg.VERBOSE_PATH === 'string') cfg.VERBOSE_PATH = cfg.VERBOSE_PATH.trim();
+      cfg.VERBOSE_MODE = !!cfg.VERBOSE_MODE;
       return cfg;
     } catch (e) { return {}; }
   }
@@ -750,42 +884,8 @@
     });
   })();
 
-  (function ensureFetchTap(){
-    if (window.__WPI_FETCH_TAP_REQUESTED__) return;
-    window.__WPI_FETCH_TAP_REQUESTED__ = true;
-    const script = document.createElement('script');
-    script.textContent = `(() => {
-      if (window.__WPI_FETCH_TAP_INSTALLED__ || !window.fetch) return;
-      window.__WPI_FETCH_TAP_INSTALLED__ = true;
-      const originalFetch = window.fetch;
-      window.fetch = async function(...args) {
-        const response = await originalFetch.apply(this, args);
-        try {
-          const req = args[0];
-          const url = req instanceof Request ? req.url : req;
-          if (typeof url === 'string' && url.includes('/pixel/')) {
-            const cleanUrl = url.split('#')[0];
-            const [pathPart, queryPart = ''] = cleanUrl.split('?');
-            const segments = pathPart.split('/').filter(Boolean);
-            const len = segments.length;
-            const tlX = Number(segments[len - 2]);
-            const tlY = Number(segments[len - 1]);
-            const params = new URLSearchParams(queryPart);
-            const pxX = Number(params.get('x'));
-            const pxY = Number(params.get('y'));
-            if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
-              window.dispatchEvent(new CustomEvent('${WPI_COORD_EVENT}', { detail: { tlX, tlY, pxX, pxY, source: 'fetch-hook', ts: Date.now() } }));
-            }
-          }
-        } catch (err) {
-          console.warn('WPI fetch tap error', err);
-        }
-        return response;
-      };
-    })();`;
-    (document.documentElement || document.head || document.body).appendChild(script);
-    script.remove();
-  })();
+
+  // Fetch tap now injected by page-hooks.js in the MAIN world per manifest.
 
   const BLUE_MARBLE_HUD_REGEX = /Tl\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Tl\s*Y\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*Y\s*[:：]\s*([\-\d.]+)/i;
 
@@ -928,6 +1028,11 @@
   if (startBtn) startBtn.addEventListener('click', async () => {
     startBtn.disabled = true; if (stopBtn) stopBtn.disabled = false;
     const cfg = collectSettingsFromUI();
+    const verboseEnabled = !!cfg.VERBOSE_MODE;
+    const verbosePathSet = !!(cfg.VERBOSE_PATH && cfg.VERBOSE_PATH.length);
+    if (verboseEnabled && !verbosePathSet) {
+      log('warn','Verbose 模式已启用但尚未选择保存路径，将临时使用浏览器下载（TODO: File System Access 写入）');
+    }
 
     // INSERTED LOG: show cfg sent and delay seconds conversion
     try { console.log('[PANEL] start-fetch sending cfg:', cfg); } catch (e) {}
@@ -951,9 +1056,17 @@
       // INSERTED LOG: show normalization and estimate details
       try { console.log('[PANEL] normalized start', s, 'normalized end', e, 'g1tmp', g1tmp, 'g2tmp', g2tmp, 'stepX', cfg.stepX, 'stepY', cfg.stepY, 'totalEstimate', totalEstimate); } catch (err) {}
 
-      log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}, Total: ${totalEstimate}` });
+      log('info','Starting job via background', {
+        summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}, Total: ${totalEstimate}`,
+        verboseEnabled,
+        verbosePathSet
+      });
     } catch (e) {
-      log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}` });
+      log('info','Starting job via background', {
+        summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`,
+        verboseEnabled,
+        verbosePathSet
+      });
     }
 
     try { chrome.storage.local.remove('__PIXEL_FETCHER_STOP__'); } catch (e){}
@@ -1005,7 +1118,14 @@
     try {
       const s = await storageGet('pxf_settings');
       const cfg = s || {};
-      fields.forEach(f => { if (cfg[f] != null && inputs[f]) inputs[f].value = String(cfg[f]); });
+      fields.forEach(f => {
+        const el = inputs[f];
+        if (!el || cfg[f] == null) return;
+        if (el.type === 'checkbox') el.checked = !!cfg[f];
+        else el.value = String(cfg[f]);
+      });
+      refreshVerboseControls();
+      refreshVerbosePathPreview();
     } catch (e) {}
   })();
 

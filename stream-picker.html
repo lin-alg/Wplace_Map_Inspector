@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>选择 Verbose 导出文件</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0f1115;
+      color: #f5f7ff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      width: min(420px, 94vw);
+      background: rgba(23,26,32,0.95);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+    p {
+      margin: 0 0 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: rgba(245,247,255,0.82);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px 16px;
+      border-radius: 16px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
+    }
+    button.primary {
+      background: linear-gradient(135deg, #8bb5ff, #5c7cff);
+      color: #0c0f18;
+      box-shadow: 0 12px 30px rgba(99,133,255,0.35);
+    }
+    button.secondary {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #d9deff;
+    }
+    button.danger {
+      border: 1px solid rgba(255,154,154,0.6);
+      color: #ffb1b1;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    #status {
+      margin-top: 12px;
+      min-height: 20px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+    }
+    #status.error { color: #ff9a9a; }
+    #status.success { color: #8bffbd; }
+    .hidden { display: none; }
+    .writer-panel {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .writer-panel h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      font-size: 13px;
+    }
+    .stat {
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .stat .label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+    }
+    .stat .value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f5f7ff;
+    }
+    .hint {
+      font-size: 12px;
+      color: rgba(255,255,255,0.65);
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="pickSection">
+      <h2>选择 Verbose CSV 保存路径</h2>
+      <p>通过此窗口授予写入权限，并保持窗口打开以监控写入进度。</p>
+      <div class="actions">
+        <button id="pickBtn" class="primary" type="button">选择文件</button>
+        <button id="cancelBtn" class="secondary" type="button">取消</button>
+      </div>
+      <div id="status" aria-live="polite"></div>
+    </div>
+    <div id="writerSection" class="writer-panel hidden">
+      <h3>写入状态</h3>
+      <p class="hint">请不要关闭此窗口，否则 verbose 写入会中断。</p>
+      <div class="stat">
+        <span class="label">目标文件</span>
+        <span id="writerFileLabel" class="value">未选择</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat">
+          <span class="label">当前任务</span>
+          <span id="writerJobId" class="value">—</span>
+        </div>
+        <div class="stat">
+          <span class="label">已写入行数</span>
+          <span id="writerRowCount" class="value">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">最近更新</span>
+          <span id="writerLastUpdate" class="value">—</span>
+        </div>
+        <div class="stat">
+          <span class="label">状态</span>
+          <span id="writerStateText" class="value">等待任务</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="stopWriterBtn" type="button" class="secondary danger">停止接收</button>
+      </div>
+    </div>
+  </div>
+  <script src="streaming-shared.js"></script>
+  <script src="stream-picker.js"></script>
+</body>
+</html>
