@@ -7,16 +7,16 @@
     * { box-sizing: border-box; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; }
     body {
       margin: 0;
-      padding: 0;
+      padding: 32px 0;
       background: #0f1115;
       color: #f5f7ff;
       min-height: 100vh;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
     }
     .card {
-      width: min(420px, 94vw);
+      width: min(460px, 96vw);
       background: rgba(23,26,32,0.95);
       border-radius: 20px;
       padding: 24px;
@@ -40,6 +40,9 @@
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+    }
+    .actions.job-actions button {
+      flex: 1 0 0;
     }
     button {
       flex: 1;
@@ -106,6 +109,9 @@
       flex-direction: column;
       gap: 4px;
     }
+    .metrics-grid {
+      margin-top: 4px;
+    }
     .stat .label {
       font-size: 11px;
       color: rgba(255,255,255,0.7);
@@ -146,8 +152,8 @@
           <span id="writerJobId" class="value">—</span>
         </div>
         <div class="stat">
-          <span class="label">已写入行数</span>
-          <span id="writerRowCount" class="value">0</span>
+          <span class="label">已采集像素数</span>
+          <span id="writerPixelCount" class="value">0</span>
         </div>
         <div class="stat">
           <span class="label">最近更新</span>
@@ -158,8 +164,27 @@
           <span id="writerStateText" class="value">等待任务</span>
         </div>
       </div>
-      <div class="actions">
-        <button id="stopWriterBtn" type="button" class="secondary danger">停止接收</button>
+      <div class="stat-grid metrics-grid">
+        <div class="stat">
+          <span class="label">任务耗时</span>
+          <span id="writerElapsed" class="value">—</span>
+        </div>
+        <div class="stat">
+          <span class="label">预计剩余</span>
+          <span id="writerEta" class="value">—</span>
+        </div>
+        <div class="stat">
+          <span class="label">当前文件大小</span>
+          <span id="writerFileSize" class="value">—</span>
+        </div>
+        <div class="stat">
+          <span class="label">已统计人数</span>
+          <span id="writerUniqueCount" class="value">0</span>
+        </div>
+      </div>
+      <div class="actions job-actions">
+        <button id="startJobBtn" type="button" class="primary" disabled>开始任务</button>
+        <button id="stopWriterBtn" type="button" class="secondary danger" disabled>停止任务</button>
       </div>
     </div>
   </div>

@@ -18,7 +18,7 @@ const SAMPLE_LIMIT = 200;
 const URL_REVOKE_DELAY_MS = 30000;
 const VERBOSE_STREAM_BATCH_SIZE = 250;
 const OFFSCREEN_DOCUMENT_URL = 'offscreen.html';
-const VERBOSE_CSV_HEADER = ['blockX','blockB','x','y','paintedById','paintedByName','paintedByAlliance'].join(',') + '\n';
+const VERBOSE_CSV_HEADER = ['blockX','blockB','x','y','paintedById','Name','paintedByAlliance'].join(',') + '\n';
 const STREAM_PICKER_SESSIONS = new Map();
 
 function ensurePickerSession(sessionId) {
@@ -78,6 +78,62 @@ async function closePickerWindow(sessionId) {
       resolve(false);
     }
   }).catch(() => {});
+}
+
+async function openPickerWindow(sessionId, { sourceTabId, notifyRuntime, reopen } = {}) {
+  const pickerUrl = chrome.runtime.getURL(`stream-picker.html?session=${encodeURIComponent(sessionId)}${reopen ? '&reopen=1' : ''}`);
+  const popup = await new Promise((resolve, reject) => {
+    try {
+      chrome.windows.create({
+        url: pickerUrl,
+        type: 'popup',
+        width: 460,
+        height: 640,
+        focused: true
+      }, win => {
+        const lastErr = chrome.runtime.lastError;
+        if (lastErr) { reject(lastErr); return; }
+        resolve(win);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+  const tabId = popup && popup.tabs && popup.tabs[0] ? popup.tabs[0].id : undefined;
+  const existing = STREAM_PICKER_SESSIONS.get(sessionId);
+  const patch = {
+    windowId: popup && popup.id,
+    tabId,
+    openedAt: Date.now(),
+    reopenAttempts: reopen ? ((existing && existing.reopenAttempts) || 0) + 1 : ((existing && existing.reopenAttempts) || 0)
+  };
+  if (typeof sourceTabId === 'number') patch.sourceTabId = sourceTabId;
+  else if (existing && typeof existing.sourceTabId === 'number') patch.sourceTabId = existing.sourceTabId;
+  if (typeof notifyRuntime === 'boolean') patch.notifyRuntime = notifyRuntime;
+  else if (existing && typeof existing.notifyRuntime === 'boolean') patch.notifyRuntime = existing.notifyRuntime;
+  updatePickerSession(sessionId, patch);
+  return popup;
+}
+
+async function openExtensionPopup(path) {
+  const targetUrl = chrome.runtime.getURL(path);
+  return await new Promise((resolve, reject) => {
+    try {
+      chrome.windows.create({
+        url: targetUrl,
+        type: 'popup',
+        width: 960,
+        height: 720,
+        focused: true
+      }, win => {
+        const lastErr = chrome.runtime.lastError;
+        if (lastErr) { reject(lastErr); return; }
+        resolve(win);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 async function sendPickerWriterCommand(sessionId, action, payload = {}) {
@@ -469,7 +525,7 @@ function escapeCsvValue(value) {
 }
 
 function recordsToCsv(records) {
-  const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName'];
+  const header = ['blockX','blockB','x','y','pixels','paintedById','Name','Alliance'];
   const lines = [header.join(',')];
   (records || []).forEach(rec => {
     const pb = rec && rec.paintedBy ? rec.paintedBy : {};
@@ -480,7 +536,8 @@ function recordsToCsv(records) {
       rec && (rec.y != null ? rec.y : rec.ly),
       rec && rec.pixels,
       pb && pb.id,
-      pb && pb.name
+      pb && pb.name,
+      pb && (pb.alliance || pb.guild || pb.group || '')
     ].map(escapeCsvValue);
     lines.push(row.join(','));
   });
@@ -489,7 +546,7 @@ function recordsToCsv(records) {
 
 function verboseEntriesToCsv(entries) {
   if (!entries || !entries.length) return '';
-  const header = ['blockX','blockB','x','y','paintedById','paintedByName','paintedByAlliance'];
+  const header = ['blockX','blockB','x','y','paintedById','Name','Alliance','AllianceId'];
   const lines = [header.join(',')];
   entries.forEach(entry => {
     const pb = entry && entry.paintedBy ? entry.paintedBy : {};
@@ -500,7 +557,8 @@ function verboseEntriesToCsv(entries) {
       entry && entry.y,
       pb && pb.id,
       pb && pb.name,
-      pb && (pb.alliance || pb.guild || pb.group || '')
+      pb && (pb.alliance || pb.guild || pb.group || ''),
+      pb && pb.allianceId
     ].map(escapeCsvValue);
     lines.push(row.join(','));
   });
@@ -976,36 +1034,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
         const sourceTabId = sender && sender.tab && sender.tab.id;
-        const pickerUrl = chrome.runtime.getURL(`stream-picker.html?session=${encodeURIComponent(sessionId)}`);
-        const popup = await new Promise((resolve, reject) => {
-          try {
-            chrome.windows.create({
-              url: pickerUrl,
-              type: 'popup',
-              width: 420,
-              height: 420,
-              focused: true
-            }, win => {
-              const lastErr = chrome.runtime.lastError;
-              if (lastErr) { reject(lastErr); return; }
-              resolve(win);
-            });
-          } catch (err) {
-            reject(err);
-          }
-        });
-        const tabId = popup && popup.tabs && popup.tabs[0] ? popup.tabs[0].id : undefined;
-        updatePickerSession(sessionId, {
-          sourceTabId,
-          windowId: popup && popup.id,
-          tabId,
-          openedAt: Date.now(),
-          streaming: false,
-          detached: false
-        });
+        await openPickerWindow(sessionId, { sourceTabId, notifyRuntime: !sourceTabId });
+        updatePickerSession(sessionId, { streaming: false, detached: false });
         sendResponse({ ok: true });
       } catch (err) {
         console.error('[BG] open-stream-picker error', err);
+        sendResponse({ ok: false, error: String(err && err.message ? err.message : err) });
+      }
+      return;
+    }
+
+    if (msg.type === 'open-verbose-png-window') {
+      try {
+        await openExtensionPopup('verbose-to-png.html');
+        sendResponse({ ok: true });
+      } catch (err) {
+        console.warn('[BG] open-verbose-png-window failed', err);
         sendResponse({ ok: false, error: String(err && err.message ? err.message : err) });
       }
       return;
@@ -1039,14 +1083,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       const info = STREAM_PICKER_SESSIONS.get(sessionId);
-      if (msg.status === 'success' && msg.streaming) {
-        updatePickerSession(sessionId, {
-          streaming: true,
-          hasHandle: true,
+      if (msg.status === 'success') {
+        const patch = {
+          streaming: !!msg.streaming,
+          hasHandle: !!msg.streaming,
           label: msg.label,
           via: msg.via,
           detached: false
-        });
+        };
+        if (msg.streaming) {
+          patch.handleGrantedAt = Date.now();
+          patch.reopenAttempts = 0;
+        }
+        updatePickerSession(sessionId, patch);
       } else {
         await closePickerWindow(sessionId).catch(() => {});
         STREAM_PICKER_SESSIONS.delete(sessionId);
@@ -1056,6 +1105,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const lastErr = chrome.runtime.lastError;
           if (lastErr) {
             console.warn('[BG] send picker result to tab failed', lastErr.message || lastErr);
+          }
+        });
+      }
+      if (info && info.notifyRuntime) {
+        chrome.runtime.sendMessage(Object.assign({ type: 'stream-picker-result' }, msg), () => {
+          const lastErr = chrome.runtime.lastError;
+          if (lastErr) {
+            console.warn('[BG] send picker result to runtime failed', lastErr.message || lastErr);
           }
         });
       }
@@ -1077,9 +1134,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'stream-writer-window-closed') {
-      if (msg.sessionId) {
-        detachPickerSession(msg.sessionId, 'window-closed');
-        STREAM_PICKER_SESSIONS.delete(msg.sessionId);
+      const sessionId = msg.sessionId;
+      if (sessionId && STREAM_PICKER_SESSIONS.has(sessionId)) {
+        const info = STREAM_PICKER_SESSIONS.get(sessionId);
+        const now = Date.now();
+        const justGranted = info && info.streaming && info.handleGrantedAt && ((now - info.handleGrantedAt) < 8000);
+        const reopenAttempts = (info && info.reopenAttempts) || 0;
+        if (justGranted && reopenAttempts < 2) {
+          try {
+            await openPickerWindow(sessionId, { reopen: true });
+            console.log('[BG] auto-reopened stream picker window', { sessionId, reopenAttempts: reopenAttempts + 1 });
+          } catch (err) {
+            console.warn('[BG] auto reopen picker failed', err);
+            detachPickerSession(sessionId, 'window-closed');
+            STREAM_PICKER_SESSIONS.delete(sessionId);
+          }
+        } else {
+          detachPickerSession(sessionId, 'window-closed');
+          STREAM_PICKER_SESSIONS.delete(sessionId);
+        }
       }
       sendResponse({ ok: true });
       return;

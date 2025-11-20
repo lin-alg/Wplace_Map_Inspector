@@ -280,11 +280,11 @@ function injectFetcherScript(payload) {
 "      return { blockX, blockB, lx, ly };\n" +
 "    }\n" +
 "    function escapeCsvValue(value){ if (value === null || value === undefined) return ''; const str = String(value); return /[\",\n]/.test(str) ? ('\"' + str.replace(/\"/g,'\"\"') + '\"') : str; }\n" +
-"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','paintedByName']; const lines = [header.join(',')];\n" +
-"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name]; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
+"    function recordsToCsv(records){ const header = ['blockX','blockB','x','y','pixels','paintedById','Name','Alliance','AllianceId']; const lines = [header.join(',')];\n" +
+"      (records || []).forEach(rec => { const pb = rec && rec.paintedBy ? rec.paintedBy : {}; const row = [rec && rec.blockX, rec && rec.blockB, rec && (rec.x != null ? rec.x : rec.lx), rec && (rec.y != null ? rec.y : rec.ly), rec && rec.pixels, pb && pb.id, pb && pb.name, pb && (pb.alliance || pb.guild || pb.group || ''), pb && pb.allianceId]; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
 "      return lines.join('\\n'); }\n" +
-"    function verboseEntriesToCsv(entries){ if (!entries || !entries.length) return ''; const header = ['blockX','blockB','x','y','paintedById','paintedByName','paintedByAlliance']; const lines = [header.join(',')];\n" +
-"      entries.forEach(entry => { const pb = entry && entry.paintedBy ? entry.paintedBy : {}; const row = [entry && entry.blockX, entry && entry.blockB, entry && entry.x, entry && entry.y, pb && pb.id, pb && pb.name, pb && (pb.alliance || pb.guild || '')]; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
+"    function verboseEntriesToCsv(entries){ if (!entries || !entries.length) return ''; const header = ['blockX','blockB','x','y','paintedById','Name','Alliance','AllianceId']; const lines = [header.join(',')];\n" +
+"      entries.forEach(entry => { const pb = entry && entry.paintedBy ? entry.paintedBy : {}; const row = [entry && entry.blockX, entry && entry.blockB, entry && entry.x, entry && entry.y, pb && pb.id, pb && pb.name, pb && (pb.alliance || pb.guild || pb.group || ''), pb && pb.allianceId]; lines.push(row.map(escapeCsvValue).join(',')); });\n" +
 "      return lines.join('\\n'); }\n" +
 "\n" +
 "    // normalize start/end first to handle px overflow (carry into blocks)\n" +

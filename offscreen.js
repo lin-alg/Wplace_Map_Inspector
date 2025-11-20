@@ -27,8 +27,7 @@ function formatVerboseRows(rows) {
       row && row.y,
       pb && pb.id,
       pb && pb.name,
-      pb && (pb.alliance || pb.guild || pb.group || ''),
-      pb ? JSON.stringify(pb) : ''
+      pb && (pb.alliance || pb.guild || pb.group || '')
     ];
     return fields.map(escapeCsvValue).join(',');
   });

@@ -130,7 +130,6 @@ const inputs = {
   BATCH_SIZE: document.getElementById('BATCH_SIZE'),
   BATCH_DELAY_MINUTES: document.getElementById('BATCH_DELAY_MINUTES'),
   BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE'),
-  VERBOSE_MODE: document.getElementById('VERBOSE_MODE'),
   VERBOSE_PATH: document.getElementById('VERBOSE_PATH')
 };
 
@@ -138,7 +137,10 @@ const pickStartBtn = document.getElementById('pickStartBtn');
 const pickEndBtn = document.getElementById('pickEndBtn');
 const verbosePathRow = document.getElementById('verbosePathRow');
 const verbosePathPreview = document.getElementById('verbosePathPreview');
-const selectVerbosePathBtn = document.getElementById('selectVerbosePathBtn');
+const openVerboseMonitorBtn = document.getElementById('openVerboseMonitorBtn');
+const openVerbosePngBtn = document.getElementById('openVerbosePngBtn');
+let popupPickerSessionId = null;
+let popupPickerTimeoutRef = null;
 const SETTINGS_KEY = 'pxf_settings';
 const RUN_STATE_KEY = '__PXF_RUNNING__';
 const STOP_FLAG_KEY = '__PIXEL_FETCHER_STOP__';
@@ -220,6 +222,10 @@ function log(type, text, extra) {
       p.textContent = `[${time}] ${text}` + (extra ? ` ${JSON.stringify(extra)}` : '');
       logEl.appendChild(p);
       logEl.scrollTop = logEl.scrollHeight;
+      const MAX_LOG_LINES = 300;
+      while (logEl.childNodes.length > MAX_LOG_LINES) {
+        logEl.removeChild(logEl.firstChild);
+      }
     }
   } catch (e) { /* ignore */ }
   if (type === 'error') console.error(text, extra || '');
@@ -234,6 +240,7 @@ function setRunningUI(isRunning) {
 
 function collectSettingsFromUI() {
   try {
+    const verbosePath = (inputs.VERBOSE_PATH?.value || '').trim();
     return {
       startBlockX: Number(inputs.startBlockX?.value || 0),
       startBlockY: Number(inputs.startBlockY?.value || 0),
@@ -250,8 +257,8 @@ function collectSettingsFromUI() {
       BATCH_SIZE: Math.max(1, Number(inputs.BATCH_SIZE?.value || 10)),
       BATCH_DELAY_MINUTES: Math.max(0, Number(inputs.BATCH_DELAY_MINUTES?.value || 0.045)),
       BASE_TEMPLATE: (inputs.BASE_TEMPLATE?.value || '').trim(),
-      VERBOSE_MODE: !!inputs.VERBOSE_MODE?.checked,
-      VERBOSE_PATH: (inputs.VERBOSE_PATH?.value || '').trim()
+      VERBOSE_MODE: !!verbosePath,
+      VERBOSE_PATH: verbosePath
     };
   } catch (e) {
     console.warn('[POPUP] collectSettingsFromUI error', e);
@@ -304,68 +311,78 @@ async function loadSettings() {
         else el.value = String(cfg[k]);
       });
     }
-    refreshVerboseControls();
     refreshVerbosePathPreview();
   } catch (e) { console.warn('[POPUP] loadSettings error', e); }
 }
 
 Object.values(inputs).forEach(el => { if (!el) return; el.addEventListener('input', scheduleSaveSettings); });
-if (inputs.VERBOSE_MODE) {
-  inputs.VERBOSE_MODE.addEventListener('change', () => {
-    refreshVerboseControls();
-    scheduleSaveSettings();
-  });
-}
 if (inputs.VERBOSE_PATH) {
   inputs.VERBOSE_PATH.addEventListener('input', refreshVerbosePathPreview);
 }
 
-if (selectVerbosePathBtn) {
-  selectVerbosePathBtn.addEventListener('click', async () => {
-    if (selectVerbosePathBtn.disabled) return;
-    selectVerbosePathBtn.disabled = true;
-    try {
-      const streaming = window.WPIStreaming;
-      if (!streaming || typeof streaming.pickVerboseTarget !== 'function') {
-        log('warn', '未加载流式写入模块，无法选择保存路径');
+function clearPopupPickerSession() {
+  if (popupPickerTimeoutRef) {
+    clearTimeout(popupPickerTimeoutRef);
+    popupPickerTimeoutRef = null;
+  }
+  popupPickerSessionId = null;
+  if (openVerboseMonitorBtn) openVerboseMonitorBtn.disabled = false;
+}
+
+if (openVerboseMonitorBtn) {
+  openVerboseMonitorBtn.addEventListener('click', () => {
+    if (openVerboseMonitorBtn.disabled) return;
+    popupPickerSessionId = `popup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    openVerboseMonitorBtn.disabled = true;
+    log('info', '正在打开 verbose 监控窗口，请在弹出的窗口中完成授权', { sessionId: popupPickerSessionId });
+    popupPickerTimeoutRef = setTimeout(() => {
+      if (!popupPickerSessionId) return;
+      log('warn', '监控窗口似乎没有响应，请重试。', { sessionId: popupPickerSessionId });
+      clearPopupPickerSession();
+    }, 120000);
+    chrome.runtime.sendMessage({ type: 'open-stream-picker', sessionId: popupPickerSessionId }, resp => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr || !resp || !resp.ok) {
+        const errMsg = lastErr ? (lastErr.message || 'runtime-error') : (resp && resp.error ? resp.error : 'failed');
+        log('error', '无法打开监控窗口，请确认扩展权限', { error: errMsg });
+        clearPopupPickerSession();
         return;
       }
-      const res = await streaming.pickVerboseTarget(inputs.VERBOSE_PATH?.value || '');
-      if (!res || !res.ok) {
-        if (!res?.cancelled) log('warn', '选择保存路径失败', res && res.error ? { error: res.error } : undefined);
-        return;
-      }
-      if (inputs.VERBOSE_PATH) inputs.VERBOSE_PATH.value = res.label;
-      refreshVerbosePathPreview();
-      await saveSettings();
-      if (res.handle) {
-        try {
-          const storeResp = await streaming.registerHandle(res.handle, {
-            label: res.label,
-            via: res.via,
-            permissionGranted: res.permissionGranted !== false
-          });
-          if (!storeResp || !storeResp.ok) {
-            log('warn', '注册文件写入句柄失败', storeResp && storeResp.error ? { error: storeResp.error } : undefined);
-          }
-        } catch (err) {
-          console.warn('[POPUP] share verbose handle failed', err);
-          log('warn', '无法将文件写入句柄传递给后台', { error: String(err) });
-        }
-      }
-      log('info', '已选择 verbose 保存路径', { target: res.label, via: res.via, streaming: !!res.handle });
-    } catch (err) {
-      console.warn('[POPUP] pick verbose path failed', err);
-      log('error', '保存路径选择失败', { error: String(err) });
-    } finally {
-      selectVerbosePathBtn.disabled = false;
-    }
+      log('info', '监控窗口已弹出，请保持其打开状态');
+    });
   });
 }
 
-function refreshVerboseControls() {
-  const enabled = !!inputs.VERBOSE_MODE?.checked;
-  if (verbosePathRow) verbosePathRow.classList.toggle('hidden', !enabled);
+if (openVerbosePngBtn) {
+  openVerbosePngBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'open-verbose-png-window' }, resp => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr || (resp && resp.ok === false)) {
+        console.warn('[POPUP] 打开 verbose 转 PNG 弹窗失败', lastErr ? lastErr.message : (resp && resp.error));
+      }
+    });
+  });
+}
+
+if (chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== 'stream-picker-result') return;
+    if (!popupPickerSessionId || msg.sessionId !== popupPickerSessionId) return;
+    clearPopupPickerSession();
+    if (msg.status === 'success') {
+      if (inputs.VERBOSE_PATH) inputs.VERBOSE_PATH.value = msg.label || '';
+      refreshVerbosePathPreview();
+      scheduleSaveSettings();
+      log('info', '已打开 verbose 监控窗口', { target: msg.label, via: msg.via, streaming: !!msg.streaming });
+      if (!msg.streaming) {
+        log('warn', '当前环境未授予文件句柄，仅记录路径描述');
+      }
+    } else if (msg.status === 'error') {
+      log('error', '监控窗口授权失败', { error: msg.error || 'unknown' });
+    } else {
+      log('info', '已取消 verbose 监控窗口授权');
+    }
+  });
 }
 
 function refreshVerbosePathPreview() {

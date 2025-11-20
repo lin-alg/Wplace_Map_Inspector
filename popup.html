@@ -41,15 +41,27 @@
             <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
           </div>
           <div class="adv-row verbose-row">
-            <label class="checkbox-label">
-              <input id="VERBOSE_MODE" type="checkbox">
-              <span>Verbose mode（逐像素导出 CSV）</span>
-            </label>
-            <div id="verbosePathRow" class="verbose-path hidden">
-              <button id="selectVerbosePathBtn" type="button">选择保存路径</button>
+            <div class="verbose-header">
+              <div class="verbose-desc">
+                <strong>Verbose 监控窗口</strong>
+                <span>开启流式写入并保持监控窗口常驻</span>
+              </div>
+              <button id="openVerboseMonitorBtn" type="button">打开监控窗口</button>
+            </div>
+            <div id="verbosePathRow" class="verbose-path">
+              <span class="label">当前目标</span>
               <span id="verbosePathPreview">未选择</span>
             </div>
             <input id="VERBOSE_PATH" type="text" hidden>
+          </div>
+          <div class="adv-row verbose-tools-row">
+            <div class="verbose-header">
+              <div class="verbose-desc">
+                <strong>Verbose 转 PNG</strong>
+                <span>导入 verbose CSV，按用户颜色输出矩形 PNG</span>
+              </div>
+              <button id="openVerbosePngBtn" type="button">打开转换器</button>
+            </div>
           </div>
         </div>
       </div>

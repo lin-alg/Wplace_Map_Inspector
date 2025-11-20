@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Verbose 转 PNG</title>
+  <style>
+    * { box-sizing: border-box; font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", sans-serif; }
+    body {
+      margin: 0;
+      background: #0c0f18;
+      color: #f2f4ff;
+      min-height: 100vh;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: 24px;
+    }
+    .shell {
+      width: min(1200px, 96vw);
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+    }
+    .panel {
+      background: rgba(17,20,31,0.94);
+      border-radius: 20px;
+      padding: 24px;
+      border: 1px solid rgba(255,255,255,0.07);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    h1 { margin: 0; font-size: 22px; }
+    p.desc { margin: 0; color: rgba(255,255,255,0.72); font-size: 14px; }
+    .file-picker {
+      border: 1px dashed rgba(255,255,255,0.3);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+    .file-picker:hover { border-color: #8bb5ff; background: rgba(139,181,255,0.08); }
+    .file-picker input { display: none; }
+    .file-picker strong { display: block; font-size: 15px; margin-bottom: 6px; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    button {
+      flex: 1;
+      min-width: 160px;
+      padding: 12px 16px;
+      border-radius: 16px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    button.primary { background: linear-gradient(135deg, #91b3ff, #5c7cff); color: #0b0e17; }
+    button.secondary { background: rgba(255,255,255,0.08); color: #f2f4ff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    canvas {
+      width: 100%;
+      background: #05060b;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.06);
+      min-height: 320px;
+    }
+    .status {
+      min-height: 20px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.75);
+    }
+    .status.error { color: #ff9d9d; }
+    .legend-panel h2 { margin: 0; font-size: 18px; }
+    .legend-list { display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow: auto; padding-right: 6px; }
+    .legend-item { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .legend-color { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.25); }
+    .stats { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: rgba(255,255,255,0.75); }
+    .stat-block { padding: 10px 12px; background: rgba(255,255,255,0.04); border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); min-width: 120px; }
+    .coord-display { font-size: 12px; color: rgba(255,255,255,0.65); }
+    .color-picker-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 7, 15, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 999;
+    }
+    .color-picker-overlay.active { display: flex; }
+    .color-picker-panel {
+      background: #111420;
+      border-radius: 18px;
+      padding: 20px;
+      width: min(420px, 92vw);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .color-picker-header { display: flex; justify-content: space-between; align-items: center; }
+    .color-picker-header h3 { margin: 0; font-size: 16px; }
+    .color-picker-header button {
+      flex: none;
+      background: none;
+      color: rgba(255,255,255,0.7);
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+    .color-picker-body { display: flex; flex-direction: column; gap: 12px; }
+    .color-input-row { display: flex; gap: 12px; align-items: center; }
+    .color-input-row input[type="text"] {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.04);
+      color: #f2f4ff;
+    }
+    .color-input-row input[type="color"] {
+      width: 56px;
+      height: 40px;
+      border: none;
+      padding: 0;
+      background: none;
+      cursor: pointer;
+    }
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 8px;
+    }
+    .palette-swatch {
+      flex: none;
+      padding: 0;
+      min-width: 0;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      cursor: pointer;
+      position: relative;
+    }
+    .palette-swatch.transparent::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: conic-gradient(#ccc 25%, #999 0 50%, #ccc 0 75%, #999 0);
+      background-size: 12px 12px;
+      border-radius: 9px;
+    }
+    .palette-swatch.empty { cursor: default; opacity: 0.3; }
+    .palette-swatch:not(.empty):hover { transform: translateY(-1px); }
+    .color-picker-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .color-picker-actions button {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+    }
+    .picker-hint { font-size: 12px; color: rgba(255,255,255,0.65); }
+    .legend-color { cursor: pointer; position: relative; }
+    .legend-color.transparent::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: conic-gradient(#d0d0d0 25%, #8f8f8f 0 50%, #d0d0d0 0 75%, #8f8f8f 0);
+      background-size: 8px 8px;
+      border-radius: 5px;
+    }
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="panel">
+      <h1>Verbose CSV 转 PNG</h1>
+      <p class="desc">导入已导出的 verbose CSV，系统会根据 blockX/blockB/x/y 复原像素并按用户着色生成矩形 PNG，右侧展示颜色图例。</p>
+      <label class="file-picker" id="filePicker">
+        <input type="file" id="verboseFile" accept=".csv,text/csv">
+        <strong>点击或拖拽 verbose CSV 文件到此处</strong>
+        <span id="fileName">尚未选择文件</span>
+      </label>
+      <div class="actions">
+        <button id="renderBtn" class="primary" disabled>解析并生成</button>
+        <button id="downloadBtn" class="secondary" disabled>下载 PNG</button>
+      </div>
+      <canvas id="previewCanvas" width="800" height="600"></canvas>
+      <div class="coord-display" id="snapshotCoord">BlockX ?, BlockY ?, x ?, y ?</div>
+      <div class="stats" id="statsBar"></div>
+      <div class="status" id="statusText">准备就绪</div>
+    </div>
+    <div class="panel legend-panel">
+      <h2>图例</h2>
+      <p class="desc">按出现次数排序，仅显示包含像素的用户。</p>
+      <div class="legend-list" id="legendList"></div>
+    </div>
+  </div>
+  <div class="color-picker-overlay" id="colorPickerOverlay" aria-hidden="true">
+    <div class="color-picker-panel" id="colorPickerPanel" role="dialog" aria-modal="true">
+      <div class="color-picker-header">
+        <h3 id="colorPickerTitle">调整颜色</h3>
+        <button type="button" id="closeColorPickerBtn" aria-label="关闭">×</button>
+      </div>
+      <div class="color-picker-body">
+        <div class="picker-hint" id="colorPickerHint">选择颜色后点击应用</div>
+        <div class="color-input-row">
+          <input type="text" id="colorHexInput" placeholder="#RRGGBB 或 #RRGGBBAA">
+          <input type="color" id="colorNativeInput" value="#ff6b6b">
+        </div>
+        <div class="palette-grid" id="pickerPaletteGrid"></div>
+      </div>
+      <div class="color-picker-actions">
+        <button type="button" class="secondary" id="defaultColorBtn">恢复默认</button>
+        <button type="button" class="secondary" id="cancelColorBtn">取消</button>
+        <button type="button" class="primary" id="applyColorBtn">应用</button>
+      </div>
+    </div>
+  </div>
+  <script src="verbose-to-png.js"></script>
+</body>
+</html>

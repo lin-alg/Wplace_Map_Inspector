@@ -333,29 +333,48 @@
       padding-top: 8px;
       border-top: 1px solid rgba(255,255,255,0.08);
     }
-    .verbose-toggle {
-      display: inline-flex;
+    .verbose-row {
+      gap: 12px;
+    }
+    .verbose-header {
+      display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
+    }
+    .verbose-desc {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
       font-size: 12px;
-      font-weight: 600;
-   }
-    .verbose-toggle input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      accent-color: #A0B8EF;
+      color: rgba(255,255,255,0.85);
+    }
+    .verbose-desc strong {
+      font-size: 13px;
+      color: #A0B8EF;
     }
     .verbose-path-row {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       align-items: center;
       font-size: 12px;
       color: #DDE6FF;
     }
+    .verbose-path-row .label {
+      font-weight: 600;
+      color: rgba(255,255,255,0.72);
+    }
     .verbose-path-row span {
-      max-width: 240px;
+      max-width: 260px;
       word-break: break-all;
       opacity: 0.85;
+    }
+    .verbose-tools-row {
+      border-top: 1px dashed rgba(255,255,255,0.15);
+      padding-top: 10px;
+    }
+    .verbose-tools-row .verbose-desc span {
+      color: rgba(255,255,255,0.68);
     }
   `;
 
@@ -397,16 +416,28 @@
                 <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
                 <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
               </div>
-              <div class="adv-row">
-                <label class="verbose-toggle">
-                  <input id="VERBOSE_MODE" type="checkbox">
-                  <span>Verbose mode（逐像素导出 CSV）</span>
-                </label>
-                <div id="verbosePathRow" class="verbose-path-row hidden">
-                  <button id="verbosePathBtn" type="button">选择保存路径</button>
+              <div class="adv-row verbose-row">
+                <div class="verbose-header">
+                  <div class="verbose-desc">
+                    <strong>Verbose 监控窗口</strong>
+                    <span>开启流式写入并保持监控窗口常驻</span>
+                  </div>
+                  <button id="openVerboseMonitorBtn" type="button">打开监控窗口</button>
+                </div>
+                <div id="verbosePathRow" class="verbose-path-row">
+                  <span class="label">当前目标</span>
                   <span id="verbosePathPreview">未选择</span>
                 </div>
                 <input id="VERBOSE_PATH" type="text" style="display:none;">
+              </div>
+              <div class="adv-row verbose-tools-row">
+                <div class="verbose-header">
+                  <div class="verbose-desc">
+                    <strong>Verbose 转 PNG</strong>
+                    <span>导入 verbose CSV，按用户颜色输出矩形 PNG</span>
+                  </div>
+                  <button id="panelVerbosePngBtn" type="button">打开转换器</button>
+                </div>
               </div>
             </div>
           </div>
@@ -450,14 +481,13 @@
   const pickStartBtn = $id('pickStartBtn');
   const pickEndBtn = $id('pickEndBtn');
   const logEl = $id('log');
-  const verboseToggle = $id('VERBOSE_MODE');
-  const verbosePathRow = $id('verbosePathRow');
   const verbosePathPreview = $id('verbosePathPreview');
-  const verbosePathBtn = $id('verbosePathBtn');
+  const openVerboseMonitorBtn = $id('openVerboseMonitorBtn');
+  const panelVerbosePngBtn = $id('panelVerbosePngBtn');
   const verbosePathInput = $id('VERBOSE_PATH');
 
   // fields map
-  const fields = ['startBlockX','startBlockY','startX','startY','endBlockX','endBlockY','endX','endY','stepX','stepY','CONCURRENCY','MAX_RPS','BATCH_SIZE','BATCH_DELAY_MINUTES','BASE_TEMPLATE','VERBOSE_MODE','VERBOSE_PATH'];
+  const fields = ['startBlockX','startBlockY','startX','startY','endBlockX','endBlockY','endX','endY','stepX','stepY','CONCURRENCY','MAX_RPS','BATCH_SIZE','BATCH_DELAY_MINUTES','BASE_TEMPLATE','VERBOSE_PATH'];
   const inputs = {};
   fields.forEach(f => inputs[f] = $id(f));
 
@@ -471,6 +501,10 @@
       p.textContent = `[${time}] ${text}` + (extra ? ` ${JSON.stringify(extra)}` : '');
       logEl.appendChild(p);
       logEl.scrollTop = logEl.scrollHeight;
+      const MAX_LOG_ENTRIES = 500;
+      while (logEl.childNodes.length > MAX_LOG_ENTRIES) {
+        logEl.removeChild(logEl.firstChild);
+      }
     } catch (e) {}
     if (type === 'error') console.error(text, extra || '');
     else if (type === 'warn') console.warn(text, extra || '');
@@ -697,20 +731,10 @@
     });
   }
 
-  function refreshVerboseControls() {
-    const enabled = !!(verboseToggle && verboseToggle.checked);
-    if (verbosePathRow) verbosePathRow.classList.toggle('hidden', !enabled);
-  }
   function refreshVerbosePathPreview() {
     if (!verbosePathPreview) return;
     const text = (verbosePathInput && verbosePathInput.value ? verbosePathInput.value : '').trim();
     verbosePathPreview.textContent = text || '未选择';
-  }
-  if (verboseToggle) {
-    verboseToggle.addEventListener('change', () => {
-      refreshVerboseControls();
-      storageSet('pxf_settings', collectSettingsFromUI());
-    });
   }
   if (verbosePathInput) {
     verbosePathInput.addEventListener('input', () => {
@@ -728,7 +752,7 @@
       pickerTimeoutRef = null;
     }
     activePickerSessionId = null;
-    if (verbosePathBtn) verbosePathBtn.disabled = false;
+    if (openVerboseMonitorBtn) openVerboseMonitorBtn.disabled = false;
   }
 
   if (!window.__WPI_STREAM_PICKER_MSG_BOUND__) {
@@ -741,42 +765,54 @@
         if (verbosePathInput) verbosePathInput.value = msg.label || '';
         refreshVerbosePathPreview();
         storageSet('pxf_settings', collectSettingsFromUI());
-        log('info', '已选择 verbose 保存路径（扩展窗口）', { target: msg.label, via: msg.via, streaming: !!msg.streaming });
+        log('info', '已打开 verbose 监控窗口', { target: msg.label, via: msg.via, streaming: !!msg.streaming });
         if (msg.streaming) {
           log('info', '写入监控窗口需要保持打开，作为逐像素写入器', { sessionId: msg.sessionId });
         }
         if (!msg.streaming) log('warn', '当前环境无法授予文件句柄，已仅保存路径描述');
       } else if (msg.status === 'error') {
-        log('error', '扩展文件选择器失败', { error: msg.error || 'unknown' });
+        log('error', '监控窗口授权失败', { error: msg.error || 'unknown' });
       } else if (msg.interrupted) {
         log('warn', '写入监控窗口已关闭，verbose 写入已停止', { reason: msg.reason || 'window-closed' });
       } else {
-        log('info', '已取消 verbose 文件选择');
+        log('info', '已取消 verbose 监控窗口授权');
       }
     });
   }
 
-  if (verbosePathBtn) {
-    verbosePathBtn.addEventListener('click', async () => {
-      if (verbosePathBtn.disabled) return;
-      verbosePathBtn.disabled = true;
+  if (openVerboseMonitorBtn) {
+    openVerboseMonitorBtn.addEventListener('click', () => {
+      if (openVerboseMonitorBtn.disabled) return;
+      openVerboseMonitorBtn.disabled = true;
       activePickerSessionId = `wpi_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      log('info', '正在打开 verbose 监控窗口，请在弹出的窗口中完成授权', { sessionId: activePickerSessionId });
       pickerTimeoutRef = setTimeout(() => {
         if (!activePickerSessionId) return;
-        log('warn', '文件选择窗口似乎没有响应，可重试或在插件弹窗中设置路径');
+        log('warn', '监控窗口似乎没有响应，可重试或在插件弹窗中设置路径');
         clearPickerSession();
       }, 120000);
       chrome.runtime.sendMessage({ type: 'open-stream-picker', sessionId: activePickerSessionId }, resp => {
         const lastErr = chrome.runtime.lastError;
         if (lastErr || !resp || !resp.ok) {
           const errMsg = lastErr ? (lastErr.message || 'runtime-error') : (resp && resp.error ? resp.error : 'failed');
-          log('error', '无法打开扩展文件选择窗口，请检查权限或在插件弹窗中设置路径', { error: errMsg });
+          log('error', '无法打开监控窗口，请检查权限或在插件弹窗中设置路径', { error: errMsg });
           clearPickerSession();
           return;
         }
-        log('info', '已打开扩展文件选择窗口，请在弹出的窗口中完成授权');
+        log('info', '监控窗口已弹出，请保持其打开状态');
       });
     });
+  }
+
+  function openVerbosePngConverter() {
+    if (!chrome?.runtime?.sendMessage) return;
+    chrome.runtime.sendMessage({ type: 'open-verbose-png-window' }, () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) console.warn('[WPI] 无法打开 verbose 转 PNG 弹窗', lastErr.message || lastErr);
+    });
+  }
+  if (panelVerbosePngBtn) {
+    panelVerbosePngBtn.addEventListener('click', openVerbosePngConverter);
   }
 
   // panel drag support — only start dragging when user targets the header itself, not its controls
@@ -831,7 +867,7 @@
       cfg.stepY = Math.max(1, Number(cfg.stepY || 1));
       if (typeof cfg.BASE_TEMPLATE === 'string') cfg.BASE_TEMPLATE = cfg.BASE_TEMPLATE.trim();
       if (typeof cfg.VERBOSE_PATH === 'string') cfg.VERBOSE_PATH = cfg.VERBOSE_PATH.trim();
-      cfg.VERBOSE_MODE = !!cfg.VERBOSE_MODE;
+      cfg.VERBOSE_MODE = !!cfg.VERBOSE_PATH;
       return cfg;
     } catch (e) { return {}; }
   }
@@ -1124,7 +1160,6 @@
         if (el.type === 'checkbox') el.checked = !!cfg[f];
         else el.value = String(cfg[f]);
       });
-      refreshVerboseControls();
       refreshVerbosePathPreview();
     } catch (e) {}
   })();

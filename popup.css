@@ -222,32 +222,52 @@ input[type="number"]::-webkit-outer-spin-button {
   margin-top: 12px;
 }
 
-.checkbox-label {
-  display: inline-flex;
+.verbose-header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
+  gap: 12px;
 }
 
-.checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: #A0B8EF;
+.verbose-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.85);
+}
+
+.verbose-desc strong {
+  font-size: 13px;
+  color: #A0B8EF;
 }
 
 .verbose-path {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 12px;
   color: #C7D8FF;
 }
 
+.verbose-path .label {
+  font-weight: 600;
+  color: rgba(255,255,255,0.72);
+}
+
 .verbose-path span {
   word-break: break-all;
-  max-width: 260px;
+  max-width: 300px;
   opacity: 0.85;
+}
+
+.verbose-tools-row {
+  border-top: 1px dashed rgba(255,255,255,0.15);
+  padding-top: 10px;
+}
+
+.verbose-tools-row .verbose-desc span {
+  color: rgba(255,255,255,0.65);
 }
 
 .hidden {
