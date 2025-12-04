@@ -14,7 +14,8 @@
     "scripting",
     "storage",
     "downloads",
-    "alarms"
+    "alarms",
+    "offscreen"
   ],
   "host_permissions": [
     "https://*.wplace.live/*",
@@ -26,9 +27,16 @@
   },
   "content_scripts": [
     {
-    "matches": ["https://*.wplace.live/*"],
-    "js": ["main.js","content.js","content-inject.js"],
-    "run_at":"document_idle",
+      "matches": ["https://*.wplace.live/*"],
+      "js": ["page-hooks.js"],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://*.wplace.live/*"],
+      "js": ["main.js","content.js","streaming-shared.js","content-inject.js"],
+      "run_at": "document_idle",
       "all_frames": false
     }
   ]

@@ -17,83 +17,365 @@
   // style + html
   const css = `
     :host { all: initial; }
-    .panel {
-      position: relative;
-      width: 420px;
-      max-width: calc(100vw - 40px);
-      height: 560px;
+    *, *::before, *::after {
+      box-sizing: border-box;
+      font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+    }
+    .coord-rowset {
       display: flex;
       flex-direction: column;
-      background: #fff;
-      color: #111;
-      border-radius: 8px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.2);
-      font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;
-      overflow: hidden;
-      border: 1px solid #e6e6e6;
+      gap: 12px;
+      margin-bottom: 12px;
     }
-      .header { position: relative; display: flex; align-items: center; justify-content: flex-start; padding: 8px 10px; background:#f5f5f5; border-bottom:1px solid #eee; cursor:grab; }
-
-    /* 居中标题（绝对定位，水平居中） */
+    .coord-row {
+      display: grid;
+      grid-template-columns: auto repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .coord-tag {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 16px;
+      background: rgba(160,184,239,0.15);
+      border: 1px solid rgba(160,184,239,0.3);
+      color: #A0B8EF;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 18px;
+      margin-top: 6px;
+    }
+    .panel {
+      position: relative;
+      z-index: 0;
+      display: flex;
+      flex-direction: column;
+      width: 480px;
+      max-width: calc(100vw - 32px);
+      max-height: 580px;
+      background: rgba(255,255,255,0.04);
+      color: #FEF4F4;
+      border-radius: 22px;
+      box-shadow: 0 25px 45px rgba(0,0,0,0.4);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(22px);
+    }
+    .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: #2F3333;
+      z-index: -1;
+    }
+    .coord-row label {
+      font-size: 11px;
+      gap: 4px;
+    }
+    .header {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 8px 12px;
+      min-height: 44px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      cursor: grab;
+      background: rgba(47,51,51,0.95);
+    }
     .title {
       position: absolute;
       left: 50%;
-      transform: translateX(-50%);
       top: 50%;
-      transform-origin: center;
-      transform: translateX(-50%) translateY(-50%); /* 保证真正垂直居中 */
+      transform: translate(-50%, -50%);
       font-size: 14px;
       font-weight: 600;
+      letter-spacing: 0.4px;
+      max-width: calc(100% - 140px);
       white-space: nowrap;
-      max-width: calc(100% - 140px); /* 留出左右控件空间，视需要调整 */
-      text-overflow: ellipsis;
       overflow: hidden;
-      pointer-events: none; /* 让标题不拦截 header 的拖拽或点击 */
+      text-overflow: ellipsis;
+      pointer-events: none;
     }
-
-    /* 保持右侧 controls 在 header 的正常流中 */
-    .header .controls { margin-left: auto; display: flex; gap:6px; align-items:center; }
-        #minBtn {
-    border: none;
-    background: transparent;
-    padding: 4px 6px;
-    color: inherit;
-    font-size: 14px;
-    line-height: 1;
-    border-radius: 4px;
-    cursor: pointer;
+    .header .controls {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
     }
+    #minBtn {
+      border: none;
+      background: rgba(255,255,255,0.08);
+      padding: 6px 10px;
+      color: #FEF4F4;
+      font-size: 14px;
+      line-height: 1;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease;
+      backdrop-filter: blur(10px);
+    }
+    #minBtn:hover { background: rgba(255,255,255,0.14); transform: translateY(-1px); }
+    #minBtn:focus { outline: 2px solid rgba(160,184,239,0.45); outline-offset: 2px; }
 
-    /* 鼠标悬停与按下的可视反馈 */
-    #minBtn:hover { background: rgba(0,0,0,0.04); }
-    #minBtn:active { background: rgba(0,0,0,0.06); }
-
-    /* 保持键盘可访问但移除默认外发光（如需更明显聚焦可自定义） */
-    #minBtn:focus { outline: 2px solid rgba(25,118,210,0.25); outline-offset: 2px; }
-    .header {
-      padding: 8px 10px;
-      background:#f5f5f5;
-      border-bottom:1px solid #eee;
+    .body {
+      padding: 14px;
+      overflow: auto;
+      flex: 1;
+      background: rgba(255,255,255,0.02);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 18px;
+    }
+    label {
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: #FEF4F4;
+    }
+    input[type="number"], input[type="text"] {
+      padding: 10px 12px;
+      font-size: 13px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.08);
+      color: #FEF4F4;
+      outline: none;
+      backdrop-filter: blur(14px);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    input[type="number"] {
+      padding-right: 38px;
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+    .coord-row input[type="number"] {
+      padding: 6px 8px;
+      padding-right: 38px;
+      font-size: 12px;
+    }
+    input[type="number"]:focus, input[type="text"]:focus {
+      border-color: #A0B8EF;
+      box-shadow: 0 0 0 2px rgba(160,184,239,0.25);
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .num-input-wrap {
+      position: relative;
+      width: 100%;
+    }
+    .num-input-wrap input[type="number"] { width: 100%; }
+    .spinner-overlay {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      bottom: 4px;
+      width: 28px;
+      border-left: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: rgba(255,255,255,0.02);
+      backdrop-filter: blur(10px);
+    }
+    .coord-row .spinner-overlay {
+      top: 2px;
+      bottom: 2px;
+      border-radius: 8px;
+    }
+    .spinner-btn {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      color: #F0F6FF;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.15s ease, color 0.15s ease;
+      user-select: none;
+    }
+    .spinner-btn + .spinner-btn {
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .spinner-btn:hover {
+      background: rgba(160,184,239,0.18);
+      color: #ffffff;
+    }
+    .spinner-btn:active {
+      background: rgba(160,184,239,0.28);
+    }
+    .spinner-btn:focus {
+      outline: 1px solid rgba(160,184,239,0.5);
+      outline-offset: -2px;
+    }
+    .controls {
+      display:flex;
+      gap:10px;
+      margin:12px 0;
+      flex-wrap:wrap;
+    }
+    button {
+      padding:10px 16px;
+      font-size:13px;
+      border-radius:18px;
+      border:none;
+      background:#A0B8EF;
+      color:#1e1f2b;
+      cursor:pointer;
+      font-weight:600;
+      box-shadow:0 12px 24px rgba(160,184,239,0.35);
+      transition:transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow:0 14px 28px rgba(160,184,239,0.45);
+    }
+    button:disabled { opacity:0.45; cursor:not-allowed; box-shadow:none; }
+    .log {
+      height:200px;
+      overflow:auto;
+      background:rgba(0,0,0,0.4);
+      color:#FEF4F4;
+      padding:12px;
+      font-family:monospace;
+      font-size:12px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,0.08);
+      backdrop-filter:blur(14px);
+    }
+    .log .info { color:#A0B8EF; }
+    .log .warn { color:#F8E58C; }
+    .log .error { color:#FF9A9A; }
+    .panel,
+    .body,
+    .log {
+      scrollbar-color: rgba(160,184,239,0.6) transparent;
+      scrollbar-width: thin;
+    }
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.05);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(160,184,239,0.65));
+      border-radius: 999px;
+      border: 1px solid rgba(47,51,51,0.6);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(160,184,239,0.8));
+    }
+    .hidden { display:none; }
+    .mini {
+      width:260px;
+      height:48px;
+      border-radius:16px;
       display:flex;
       align-items:center;
-      justify-content:space-between;
-      cursor:grab;
+      justify-content:center;
+      font-weight:600;
+      background:rgba(47,51,51,0.9);
+      color:#FEF4F4;
+      border:1px solid rgba(255,255,255,0.12);
     }
-    .title { font-size:14px; font-weight:600; }
-    .header .controls button { margin-left:6px; }
-    .body { padding:10px; overflow:auto; flex:1; }
-    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 10px; }
-    label { font-size:12px; display:flex; flex-direction:column; }
-    input[type="number"], input[type="text"] { padding:6px 8px; font-size:12px; border:1px solid #ddd; border-radius:4px; }
-    .controls { display:flex; gap:8px; margin:8px 0; flex-wrap:wrap; }
-    button { padding:6px 10px; font-size:13px; border-radius:6px; border:1px solid #ccc; background:#f5f5f5; cursor:pointer; }
-    button:disabled { opacity:0.5; cursor:not-allowed; }
-    .log { height:200px; overflow:auto; background:#111; color:#d6ffd6; padding:8px; font-family:monospace; font-size:12px; border-radius:6px; }
-    .log .info { color:#9fd5ff; }
-    .log .warn { color:#ffd39f; }
-    .log .error { color:#ffb4b4; }
-    .hidden { display:none; }
-    .mini { width:260px; height:40px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:600; }
+    #advToggle {
+      border:none;
+      background:rgba(255,255,255,0.08);
+      color:#FEF4F4;
+      padding:8px 12px;
+      border-radius:14px;
+      cursor:pointer;
+      backdrop-filter:blur(10px);
+      transition:background 0.2s ease, transform 0.2s ease;
+    }
+    #advToggle:hover { background: rgba(255,255,255,0.16); transform: translateY(-1px); }
+    .grid-span {
+      grid-column: 1 / -1;
+      margin-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      padding-top: 8px;
+    }
+    .adv-flex {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .base-template {
+      flex: 1;
+      min-width: 200px;
+    }
+    .base-template input { width: 100%; }
+    .adv-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .verbose-row {
+      gap: 12px;
+    }
+    .verbose-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .verbose-desc {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.85);
+    }
+    .verbose-desc strong {
+      font-size: 13px;
+      color: #A0B8EF;
+    }
+    .verbose-path-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 12px;
+      color: #DDE6FF;
+    }
+    .verbose-path-row .label {
+      font-weight: 600;
+      color: rgba(255,255,255,0.72);
+    }
+    .verbose-path-row span {
+      max-width: 260px;
+      word-break: break-all;
+      opacity: 0.85;
+    }
+    .verbose-tools-row {
+      border-top: 1px dashed rgba(255,255,255,0.15);
+      padding-top: 10px;
+    }
+    .verbose-tools-row .verbose-desc span {
+      color: rgba(255,255,255,0.68);
+    }
   `;
 
   const html = `
@@ -105,27 +387,57 @@
         </div>
       </div>
       <div class="body">
+        <div class="coord-rowset">
+          <div class="coord-row">
+            <span class="coord-tag">Start</span>
+            <label>Tl X<input id="startBlockX" type="number" value="0"></label>
+            <label>Tl Y<input id="startBlockY" type="number" value="0"></label>
+            <label>Px X<input id="startX" type="number" value="652"></label>
+            <label>Px Y<input id="startY" type="number" value="964"></label>
+          </div>
+          <div class="coord-row">
+            <span class="coord-tag">End</span>
+            <label>Tl X<input id="endBlockX" type="number" value="0"></label>
+            <label>Tl Y<input id="endBlockY" type="number" value="1"></label>
+            <label>Px X<input id="endX" type="number" value="670"></label>
+            <label>Px Y<input id="endY" type="number" value="23"></label>
+          </div>
+        </div>
         <div class="grid">
-          <label>start Tl X<input id="startBlockX" type="number" value="0"></label>
-          <label>start Tl Y<input id="startBlockY" type="number" value="0"></label>
-          <label>start Px X<input id="startX" type="number" value="652"></label>
-          <label>start Px Y<input id="startY" type="number" value="964"></label>
-          <label>end Tl X<input id="endBlockX" type="number" value="0"></label>
-          <label>end Tl Y<input id="endBlockY" type="number" value="1"></label>
-          <label>end Px X<input id="endX" type="number" value="670"></label>
-          <label>end Px Y<input id="endY" type="number" value="23"></label>
           <label>step X<input id="stepX" type="number" value="1" min="1"></label>
           <label>step Y<input id="stepY" type="number" value="1" min="1"></label>
-          <div style="grid-column:1 / -1; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
+          <div class="grid-span">
             <button id="advToggle" type="button">Show advanced ▾</button>
             <div id="advBody" style="margin-top:8px; display:none;">
-              <div class="adv-grid-responsive">
+              <div class="adv-flex">
                 <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
                 <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
                 <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1"></label>
                 <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
-                <label>BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
-                <label style="grid-column: 1 / -1;"></label>
+                <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
+              </div>
+              <div class="adv-row verbose-row">
+                <div class="verbose-header">
+                  <div class="verbose-desc">
+                    <strong>Verbose 监控窗口</strong>
+                    <span>开启流式写入并保持监控窗口常驻</span>
+                  </div>
+                  <button id="openVerboseMonitorBtn" type="button">打开监控窗口</button>
+                </div>
+                <div id="verbosePathRow" class="verbose-path-row">
+                  <span class="label">当前目标</span>
+                  <span id="verbosePathPreview">未选择</span>
+                </div>
+                <input id="VERBOSE_PATH" type="text" style="display:none;">
+              </div>
+              <div class="adv-row verbose-tools-row">
+                <div class="verbose-header">
+                  <div class="verbose-desc">
+                    <strong>Verbose 转 PNG</strong>
+                    <span>导入 verbose CSV，按用户颜色输出矩形 PNG</span>
+                  </div>
+                  <button id="panelVerbosePngBtn" type="button">打开转换器</button>
+                </div>
               </div>
             </div>
           </div>
@@ -169,9 +481,13 @@
   const pickStartBtn = $id('pickStartBtn');
   const pickEndBtn = $id('pickEndBtn');
   const logEl = $id('log');
+  const verbosePathPreview = $id('verbosePathPreview');
+  const openVerboseMonitorBtn = $id('openVerboseMonitorBtn');
+  const panelVerbosePngBtn = $id('panelVerbosePngBtn');
+  const verbosePathInput = $id('VERBOSE_PATH');
 
   // fields map
-  const fields = ['startBlockX','startBlockY','startX','startY','endBlockX','endBlockY','endX','endY','stepX','stepY','CONCURRENCY','MAX_RPS','BATCH_SIZE','BATCH_DELAY_MINUTES','BASE_TEMPLATE'];
+  const fields = ['startBlockX','startBlockY','startX','startY','endBlockX','endBlockY','endX','endY','stepX','stepY','CONCURRENCY','MAX_RPS','BATCH_SIZE','BATCH_DELAY_MINUTES','BASE_TEMPLATE','VERBOSE_PATH'];
   const inputs = {};
   fields.forEach(f => inputs[f] = $id(f));
 
@@ -185,6 +501,10 @@
       p.textContent = `[${time}] ${text}` + (extra ? ` ${JSON.stringify(extra)}` : '');
       logEl.appendChild(p);
       logEl.scrollTop = logEl.scrollHeight;
+      const MAX_LOG_ENTRIES = 500;
+      while (logEl.childNodes.length > MAX_LOG_ENTRIES) {
+        logEl.removeChild(logEl.firstChild);
+      }
     } catch (e) {}
     if (type === 'error') console.error(text, extra || '');
     else if (type === 'warn') console.warn(text, extra || '');
@@ -204,11 +524,12 @@
       right: '20px',
       bottom: '20px',
       zIndex: '2147483646',
-      padding: '8px 10px',
-      borderRadius: '6px',
-      background: 'rgb(25, 118, 210)',
-      color: '#fff',
+      padding: '10px 16px',
+      borderRadius: '16px',
+      background: '#A0B8EF',
+      color: '#1e1f2b',
       border: 'none',
+      boxShadow: '0 14px 26px rgba(160,184,239,0.45)',
       cursor: 'pointer',
       pointerEvents: 'auto',
       userSelect: 'none',
@@ -410,6 +731,90 @@
     });
   }
 
+  function refreshVerbosePathPreview() {
+    if (!verbosePathPreview) return;
+    const text = (verbosePathInput && verbosePathInput.value ? verbosePathInput.value : '').trim();
+    verbosePathPreview.textContent = text || '未选择';
+  }
+  if (verbosePathInput) {
+    verbosePathInput.addEventListener('input', () => {
+      refreshVerbosePathPreview();
+      storageSet('pxf_settings', collectSettingsFromUI());
+    });
+  }
+
+  let activePickerSessionId = null;
+  let pickerTimeoutRef = null;
+
+  function clearPickerSession() {
+    if (pickerTimeoutRef) {
+      clearTimeout(pickerTimeoutRef);
+      pickerTimeoutRef = null;
+    }
+    activePickerSessionId = null;
+    if (openVerboseMonitorBtn) openVerboseMonitorBtn.disabled = false;
+  }
+
+  if (!window.__WPI_STREAM_PICKER_MSG_BOUND__) {
+    window.__WPI_STREAM_PICKER_MSG_BOUND__ = true;
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== 'stream-picker-result') return;
+      if (!activePickerSessionId || msg.sessionId !== activePickerSessionId) return;
+      clearPickerSession();
+      if (msg.status === 'success') {
+        if (verbosePathInput) verbosePathInput.value = msg.label || '';
+        refreshVerbosePathPreview();
+        storageSet('pxf_settings', collectSettingsFromUI());
+        log('info', '已打开 verbose 监控窗口', { target: msg.label, via: msg.via, streaming: !!msg.streaming });
+        if (msg.streaming) {
+          log('info', '写入监控窗口需要保持打开，作为逐像素写入器', { sessionId: msg.sessionId });
+        }
+        if (!msg.streaming) log('warn', '当前环境无法授予文件句柄，已仅保存路径描述');
+      } else if (msg.status === 'error') {
+        log('error', '监控窗口授权失败', { error: msg.error || 'unknown' });
+      } else if (msg.interrupted) {
+        log('warn', '写入监控窗口已关闭，verbose 写入已停止', { reason: msg.reason || 'window-closed' });
+      } else {
+        log('info', '已取消 verbose 监控窗口授权');
+      }
+    });
+  }
+
+  if (openVerboseMonitorBtn) {
+    openVerboseMonitorBtn.addEventListener('click', () => {
+      if (openVerboseMonitorBtn.disabled) return;
+      openVerboseMonitorBtn.disabled = true;
+      activePickerSessionId = `wpi_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      log('info', '正在打开 verbose 监控窗口，请在弹出的窗口中完成授权', { sessionId: activePickerSessionId });
+      pickerTimeoutRef = setTimeout(() => {
+        if (!activePickerSessionId) return;
+        log('warn', '监控窗口似乎没有响应，可重试或在插件弹窗中设置路径');
+        clearPickerSession();
+      }, 120000);
+      chrome.runtime.sendMessage({ type: 'open-stream-picker', sessionId: activePickerSessionId }, resp => {
+        const lastErr = chrome.runtime.lastError;
+        if (lastErr || !resp || !resp.ok) {
+          const errMsg = lastErr ? (lastErr.message || 'runtime-error') : (resp && resp.error ? resp.error : 'failed');
+          log('error', '无法打开监控窗口，请检查权限或在插件弹窗中设置路径', { error: errMsg });
+          clearPickerSession();
+          return;
+        }
+        log('info', '监控窗口已弹出，请保持其打开状态');
+      });
+    });
+  }
+
+  function openVerbosePngConverter() {
+    if (!chrome?.runtime?.sendMessage) return;
+    chrome.runtime.sendMessage({ type: 'open-verbose-png-window' }, () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) console.warn('[WPI] 无法打开 verbose 转 PNG 弹窗', lastErr.message || lastErr);
+    });
+  }
+  if (panelVerbosePngBtn) {
+    panelVerbosePngBtn.addEventListener('click', openVerbosePngConverter);
+  }
+
   // panel drag support — only start dragging when user targets the header itself, not its controls
   (function(){
     let dragging = false, startX=0, startY=0, origLeft=0, origTop=0;
@@ -455,10 +860,14 @@
         const el = inputs[f];
         if (!el) return;
         if (el.type === 'number') cfg[f] = Number(el.value || 0);
+        else if (el.type === 'checkbox') cfg[f] = !!el.checked;
         else cfg[f] = (el.value || '').toString();
       });
       cfg.stepX = Math.max(1, Number(cfg.stepX || 1));
       cfg.stepY = Math.max(1, Number(cfg.stepY || 1));
+      if (typeof cfg.BASE_TEMPLATE === 'string') cfg.BASE_TEMPLATE = cfg.BASE_TEMPLATE.trim();
+      if (typeof cfg.VERBOSE_PATH === 'string') cfg.VERBOSE_PATH = cfg.VERBOSE_PATH.trim();
+      cfg.VERBOSE_MODE = !!cfg.VERBOSE_PATH;
       return cfg;
     } catch (e) { return {}; }
   }
@@ -489,25 +898,137 @@
   }
   function toGlobalUI(bx, by, lx, ly, BLOCK_SIZE) { return { gx: bx * BLOCK_SIZE + lx, gy: by * BLOCK_SIZE + ly }; }
 
-  // pick coords from page (keeps original logic)
-  async function pickCoordsFromPage() {
+  const WPI_COORD_EVENT = 'wpi-coords';
+  let lastCoordFromFetch = null;
+
+  function captureCoordDetail(detail) {
+    if (!detail) return;
+    const tlX = Number(detail.tlX ?? detail.tileX ?? detail.tx);
+    const tlY = Number(detail.tlY ?? detail.tileY ?? detail.ty);
+    const pxX = Number(detail.pxX ?? detail.pixelX ?? detail.px);
+    const pxY = Number(detail.pxY ?? detail.pixelY ?? detail.py);
+    if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+      lastCoordFromFetch = { tlX, tlY, pxX, pxY, source: detail.source || 'fetch-hook', ts: detail.ts || Date.now() };
+    }
+  }
+
+  (function initCoordBridge(){
+    if (window.__WPI_PANEL_COORD_BOUND__) return;
+    window.__WPI_PANEL_COORD_BOUND__ = true;
+    window.addEventListener(WPI_COORD_EVENT, (evt) => {
+      try { captureCoordDetail(evt.detail); } catch (e) { console.warn('[WPI] coord event error', e); }
+    });
+  })();
+
+
+  // Fetch tap now injected by page-hooks.js in the MAIN world per manifest.
+
+  const BLUE_MARBLE_HUD_REGEX = /Tl\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Tl\s*Y\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*X\s*[:：]\s*([\-\d.]+)[,\)\s]+Px\s*Y\s*[:：]\s*([\-\d.]+)/i;
+
+  function parseBlueMarbleHud(rawText) {
+    if (!rawText) return null;
+    const match = BLUE_MARBLE_HUD_REGEX.exec(rawText);
+    if (!match) return null;
+    return {
+      tlX: Number(match[1]),
+      tlY: Number(match[2]),
+      pxX: Number(match[3]),
+      pxY: Number(match[4])
+    };
+  }
+
+  function parseDisplaySpan() {
+    try {
+      const el = document.getElementById('bm-display-coords');
+      if (!el || !el.textContent) return null;
+      return parseBlueMarbleHud(el.textContent);
+    } catch (e) { return null; }
+  }
+
+  function parseBmInputs() {
+    const tx = document.getElementById('bm-input-tx');
+    const ty = document.getElementById('bm-input-ty');
+    const px = document.getElementById('bm-input-px');
+    const py = document.getElementById('bm-input-py');
+    if (!tx || !ty || !px || !py) return null;
+    const tlX = Number(tx.value);
+    const tlY = Number(ty.value);
+    const pxX = Number(px.value);
+    const pxY = Number(py.value);
+    if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) return { tlX, tlY, pxX, pxY };
+    return null;
+  }
+
+  function readHudCoords() {
     try {
       const el = document.getElementById('bm-h') || document.querySelector('[id="bm-h"]');
-      const raw = el ? (el.innerText || el.textContent || '') : '';
-      const coords = typeof parseBmH === 'function' ? parseBmH(raw) : null;
-      if (coords) return { ok: true, coords };
-    } catch (e) {}
+      return parseBlueMarbleHud(el ? (el.innerText || el.textContent || '') : '');
+    } catch (e) { return null; }
+  }
+
+  function extractCoordsFromPixelUrl(url) {
+    if (!url || url.indexOf('/pixel/') === -1) return null;
     try {
-      return await new Promise(resolve => {
+      const cleanUrl = url.split('#')[0];
+      const [pathPart, queryPart = ''] = cleanUrl.split('?');
+      const segments = pathPart.split('/').filter(Boolean);
+      if (segments.length < 2) return null;
+      const tlX = Number(segments[segments.length - 2]);
+      const tlY = Number(segments[segments.length - 1]);
+      const params = new URLSearchParams(queryPart);
+      const pxX = Number(params.get('x'));
+      const pxY = Number(params.get('y'));
+      if ([tlX, tlY, pxX, pxY].every(n => Number.isFinite(n))) {
+        return { tlX, tlY, pxX, pxY };
+      }
+    } catch (err) {}
+    return null;
+  }
+
+  function installPixelPerformanceTap() {
+    if (window.__WPI_PIXEL_PERF_TAP__) return;
+    window.__WPI_PIXEL_PERF_TAP__ = true;
+    const handleEntries = (entries) => {
+      entries.forEach(entry => {
+        if (!entry || !entry.name) return;
+        const coords = extractCoordsFromPixelUrl(entry.name);
+        if (!coords) return;
+        captureCoordDetail(Object.assign({ source: 'perf-resource', ts: Date.now() }, coords));
         try {
-          chrome.runtime.sendMessage({ type: 'grabCoords' }, resp => {
-            resolve(resp || { ok: false, error: 'no-response' });
-          });
-        } catch (err) {
-          resolve({ ok: false, error: String(err) });
-        }
+        } catch (err) { console.error('[WPI] Failed to dispatch WPI_COORD_EVENT', err); }
       });
-    } catch (e) { return { ok: false, error: String(e) }; }
+    };
+    try {
+      const existing = performance.getEntriesByType('resource') || [];
+      handleEntries(existing);
+    } catch (err) { console.warn('[WPI] perf tap preload failed', err); }
+    try {
+      const observer = new PerformanceObserver(list => handleEntries(list.getEntries()));
+      observer.observe({ entryTypes: ['resource'] });
+    } catch (err) { console.warn('[WPI] perf tap observe failed', err); }
+  }
+  installPixelPerformanceTap();
+
+  function resolveLatestCoords() {
+    const hud = readHudCoords();
+    if (hud) return hud;
+    if (lastCoordFromFetch) return Object.assign({}, lastCoordFromFetch);
+    const display = parseDisplaySpan();
+    if (display) return display;
+    const inputs = parseBmInputs();
+    if (inputs) return inputs;
+    return null;
+  }
+
+  // pick coords from page using multiple fallbacks
+  async function pickCoordsFromPage() {
+    try {
+      const coords = resolveLatestCoords();
+      if (coords) return { ok: true, coords };
+      return { ok: false, error: 'no-coords' };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
   }
 
   async function applyPickedCoords(kind) {
@@ -543,6 +1064,11 @@
   if (startBtn) startBtn.addEventListener('click', async () => {
     startBtn.disabled = true; if (stopBtn) stopBtn.disabled = false;
     const cfg = collectSettingsFromUI();
+    const verboseEnabled = !!cfg.VERBOSE_MODE;
+    const verbosePathSet = !!(cfg.VERBOSE_PATH && cfg.VERBOSE_PATH.length);
+    if (verboseEnabled && !verbosePathSet) {
+      log('warn','Verbose 模式已启用但尚未选择保存路径，将临时使用浏览器下载（TODO: File System Access 写入）');
+    }
 
     // INSERTED LOG: show cfg sent and delay seconds conversion
     try { console.log('[PANEL] start-fetch sending cfg:', cfg); } catch (e) {}
@@ -566,9 +1092,17 @@
       // INSERTED LOG: show normalization and estimate details
       try { console.log('[PANEL] normalized start', s, 'normalized end', e, 'g1tmp', g1tmp, 'g2tmp', g2tmp, 'stepX', cfg.stepX, 'stepY', cfg.stepY, 'totalEstimate', totalEstimate); } catch (err) {}
 
-      log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}, Total: ${totalEstimate}` });
+      log('info','Starting job via background', {
+        summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}, Total: ${totalEstimate}`,
+        verboseEnabled,
+        verbosePathSet
+      });
     } catch (e) {
-      log('info','Starting job via background', { summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}` });
+      log('info','Starting job via background', {
+        summary:`blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`,
+        verboseEnabled,
+        verbosePathSet
+      });
     }
 
     try { chrome.storage.local.remove('__PIXEL_FETCHER_STOP__'); } catch (e){}
@@ -620,7 +1154,13 @@
     try {
       const s = await storageGet('pxf_settings');
       const cfg = s || {};
-      fields.forEach(f => { if (cfg[f] != null && inputs[f]) inputs[f].value = String(cfg[f]); });
+      fields.forEach(f => {
+        const el = inputs[f];
+        if (!el || cfg[f] == null) return;
+        if (el.type === 'checkbox') el.checked = !!cfg[f];
+        else el.value = String(cfg[f]);
+      });
+      refreshVerbosePathPreview();
     } catch (e) {}
   })();
 

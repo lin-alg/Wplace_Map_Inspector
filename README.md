@@ -1,26 +1,29 @@
 # Wplace_Map_Inspector
 
-A lightweight Chromium extension that selects a rectangular area on the Wplace map, scans which users painted the pixels in that area, and exports results as a JSONL file. Minimal setup, one-click start/stop, background-friendly, and a compact in-page floating quick button for convenience.
+A lightweight Chromium extension that selects a rectangular area on the Wplace map, scans which users painted the pixels in that area, and exports results as a CSV file. Minimal setup, one-click start/stop, background-friendly, and a compact in-page floating quick button for convenience.
 
 ---
 
 ## Quick Install
 
 You can:
+
 1. Download the packed .crx file
 2. Open Chrome or Edge and go to `chrome://extensions/` or `edge://extensions/`, drag the .crx file to the browser to install the extension.
 
 Or:
+
 1. Clone or download the repository:  
-   `git clone <repo_url>`  
-   If you downloaded a ZIP, unzip it first.
+  `git clone <repo_url>`  
+  If you downloaded a ZIP, unzip it first.
 2. Open Chrome or Edge and go to `chrome://extensions/` or `edge://extensions/`, enable Developer mode.
 3. Click **Load unpacked** and choose the repository folder. The extension icon will appear in the toolbar.
 
 Notes:
-- Use Chromium-based browsers (Chrome or Edge) for easiest compatibility(Firefox hasn't been tested yet).
+
+- Use Chromium-based browsers (Chrome or Edge) for easiest compatibility (Firefox hasn't been tested yet).
 - The extension is tuned for jobs up to 20,000 sampled pixels. For larger scans, increase `stepX`/`stepY` to reduce scanning count.
-- The Pickup Coordinates feature requires you to enable Blue Marble, another plugin. 
+- The Pickup Coordinates feature requires you to enable Blue Marble, another plugin.
 
 ---
 
@@ -33,8 +36,8 @@ Notes:
    - End: `endBlockX`, `endBlockY`, `endX`, `endY`
 4. Set `stepX` / `stepY` to control sampling density (larger value = fewer requests). Default `1` = full resolution.
 5. (Optional and dangerous) Open Advanced to adjust concurrency, rate limits, batch sizing, and URL template.
-6. Click **Start** to begin scanning. Click **Stop** to cancel. Progress and logs appear in the panel. When finished or stopped, the collected results are exported automatically as a JSONL `.txt` file.
-7. To convert JSONL to Excel, use the included `parse-to-xlsx.html` or any tool that supports JSON Lines.
+6. Click **Start** to begin scanning. Click **Stop** to cancel. Progress and logs appear in the panel. When finished or stopped, the collected results are exported automatically as a `.csv` file.
+7. To convert CSV to Excel, use the included `parse-to-xlsx.html` or any spreadsheet tool that supports CSV.
 
 ---
 
@@ -66,8 +69,8 @@ Notes:
 
 ## Output & Tools
 
-- Export format: `.txt` (JSONL) with one JSON object per line containing pixel coordinates and discovered `paintedBy` metadata.
-- Use the included `parse-to-xlsx.html` to convert JSONL to XLSX or any JSON Lines–capable tool.
+- Export format: `.csv` with headers for block/pixel coordinates, pixel counts, and the associated `paintedBy` metadata (flattened columns plus the raw JSON blob).
+- Use the included `parse-to-xlsx.html` to convert CSV to XLSX or open the CSV directly in spreadsheet software.
 
 ---
 
@@ -92,7 +95,7 @@ Notes:
 
 ## Contributing
 
-Report issues or open PRs with reproduction steps and panel logs. Community Discord: `https://discord.gg/9SXj3xMEPr`.
+Report issues or open PRs with reproduction steps and panel logs. Community Discord: <https://discord.gg/9SXj3xMEPr>.
 
 ---
 

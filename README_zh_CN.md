@@ -1,6 +1,6 @@
 # Wplace_Map_Inspector（中文版说明）
 
-一个轻量级的 Chromium 扩展，选取 Wplace 地图上的矩形区域，扫描该区域中哪些用户绘制过像素，结果导出为 JSONL。安装与使用简单，支持后台运行与一键开始/停止，并提供页面内可拖拽的快捷按钮与小巧面板。
+一个轻量级的 Chromium 扩展，选取 Wplace 地图上的矩形区域，扫描该区域中哪些用户绘制过像素，结果导出为 CSV。安装与使用简单，支持后台运行与一键开始/停止，并提供页面内可拖拽的快捷按钮与小巧面板。
 
 ---
 
@@ -12,6 +12,7 @@
   2. 开发者模式加载：克隆或解压仓库，打开扩展页 → 启用“开发者模式” → 点击 **Load unpacked** 并选择仓库根目录。
 
 注意：
+
 - 默认适用于最多 **20,000** 个采样点；若扫描更大区域请增大 `stepX` / `stepY` 来减少请求数。
 - “拾取坐标”功能需要配合其它页面插件（如 Blue Marble）才能自动填充坐标。
 
@@ -26,8 +27,8 @@
    - End：`endBlockX`、`endBlockY`、`endX`、`endY`  
 4. 设置采样密度 `stepX` / `stepY`（步长越大，请求越少；默认 `1` 为全分辨率）。  
 5. （可选）打开 Advanced 调整：`CONCURRENCY`、`MAX_RPS`、`BATCH_SIZE`、`BATCH_DELAY_MINUTES`、`BASE_TEMPLATE`。  
-6. 点击 **Start** 开始扫描；点击 **Stop** 取消。进度与日志在面板显示。任务完成或停止后会**自动导出** JSONL (.txt) 文件。  
-7. 若需 Excel：使用仓库内的 `parse-to-xlsx.html` 将 JSONL 转为 XLSX，或用支持 JSON Lines 的工具导入。
+6. 点击 **Start** 开始扫描；点击 **Stop** 取消。进度与日志在面板显示。任务完成或停止后会**自动导出** `.csv` 文件。  
+7. 若需 Excel：使用仓库内的 `parse-to-xlsx.html` 或任意表格工具直接打开 CSV。
 
 ---
 
@@ -55,8 +56,8 @@
 
 ## 输出格式与工具
 
-- 导出文件：`.txt`（JSONL），每行一个 JSON 对象，包含像素坐标与 `paintedBy` 元数据（已去除大体积字段如头像数据）。  
-- 提供工具：`parse-to-xlsx.html` — 将 JSONL 解析并导出为 Excel（XLSX）。该工具会对 `paintedBy.id` 去重并生成常用字段列（id、name、alliance 等）。
+- 导出文件：`.csv`，包含块坐标、像素坐标、像素计数，并提供 `paintedBy` 的扁平字段以及原始 JSON 备份（已去除大体积字段如头像数据）。  
+- 提供工具：`parse-to-xlsx.html` — 将 CSV 解析并导出为 Excel（XLSX）。该工具会对 `paintedBy.id` 去重并生成常用字段列（id、name、alliance 等）。
 
 ---
 
@@ -69,13 +70,14 @@
 - 下载被阻止：浏览器可能限制扩展下载，允许扩展下载或查看面板日志以排查导出失败。
 
 建议：
+
 - 从小范围、保守速率开始测试，确认行为正常后再逐步扩大范围。尊重目标服务条款与速率限制，仅访问公开像素元数据接口。
 
 ---
 
 ## 贡献与许可
 
-- 欢迎提交 issue / PR，请附上可复现步骤与面板日志。社区讨论群（Discord）：https://discord.gg/9SXj3xMEPr  
+- 欢迎提交 issue / PR，请附上可复现步骤与面板日志。社区讨论群（Discord）：<https://discord.gg/9SXj3xMEPr>  
 - 许可证：**GPL-3.0**
 
 ---

@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>          Wplace_Map_Inspector v2.0</title>
@@ -9,29 +9,59 @@
   <div class="wrap">
     <h3>          Wplace_Map_Inspector</h3>
 
-    <div class="grid">
-      <label>start Tl X<input id="startBlockX" type="number" value="0"></label>
-      <label>start Tl Y<input id="startBlockY" type="number" value="0"></label>
-      <label>start Px X<input id="startX" type="number" value="652"></label>
-      <label>start Px Y<input id="startY" type="number" value="964"></label>
+    <div class="coord-rowset">
+      <div class="coord-row">
+        <span class="coord-tag">Start</span>
+        <label>Tl X<input id="startBlockX" type="number" value="0"></label>
+        <label>Tl Y<input id="startBlockY" type="number" value="0"></label>
+        <label>Px X<input id="startX" type="number" value="652"></label>
+        <label>Px Y<input id="startY" type="number" value="964"></label>
+      </div>
+      <div class="coord-row">
+        <span class="coord-tag">End</span>
+        <label>Tl X<input id="endBlockX" type="number" value="0"></label>
+        <label>Tl Y<input id="endBlockY" type="number" value="1"></label>
+        <label>Px X<input id="endX" type="number" value="670"></label>
+        <label>Px Y<input id="endY" type="number" value="23"></label>
+      </div>
+    </div>
 
-      <label>end Tl X<input id="endBlockX" type="number" value="0"></label>
-      <label>end Tl Y<input id="endBlockY" type="number" value="1"></label>
-      <label>end Px X<input id="endX" type="number" value="670"></label>
-      <label>end Px Y<input id="endY" type="number" value="23"></label>
-
+    <div class="grid grid-basic">
       <label>step X<input id="stepX" type="number" value="1" min="1"></label>
       <label>step Y<input id="stepY" type="number" value="1" min="1"></label>
 
-      <div style="grid-column: 1 / -1; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
+      <div class="grid-span">
         <button id="advToggle" type="button" style="padding:4px 8px; font-size:13px;">Show advanced ▾</button>
         <div id="advBody" style="margin-top:8px; display:none;">
-          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+          <div class="adv-flex">
             <label>CONCURRENCY <input id="CONCURRENCY" type="number" value="4" min="1"></label>
             <label>MAX_RPS <input id="MAX_RPS" type="number" value="6" min="1"></label>
             <label>BATCH_SIZE <input id="BATCH_SIZE" type="number" value="10" min="1"></label>
             <label>BATCH_DELAY_MINUTES <input id="BATCH_DELAY_MINUTES" type="number" value="0.045" step="0.001" min="0"></label>
-            <label style="flex:1; min-width:200px;">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default" style="width:100%"></label>
+            <label class="base-template">BASE_TEMPLATE <input id="BASE_TEMPLATE" type="text" placeholder="Default"></label>
+          </div>
+          <div class="adv-row verbose-row">
+            <div class="verbose-header">
+              <div class="verbose-desc">
+                <strong>Verbose 监控窗口</strong>
+                <span>开启流式写入并保持监控窗口常驻</span>
+              </div>
+              <button id="openVerboseMonitorBtn" type="button">打开监控窗口</button>
+            </div>
+            <div id="verbosePathRow" class="verbose-path">
+              <span class="label">当前目标</span>
+              <span id="verbosePathPreview">未选择</span>
+            </div>
+            <input id="VERBOSE_PATH" type="text" hidden>
+          </div>
+          <div class="adv-row verbose-tools-row">
+            <div class="verbose-header">
+              <div class="verbose-desc">
+                <strong>Verbose 转 PNG</strong>
+                <span>导入 verbose CSV，按用户颜色输出矩形 PNG</span>
+              </div>
+              <button id="openVerbosePngBtn" type="button">打开转换器</button>
+            </div>
           </div>
         </div>
       </div>
@@ -48,6 +78,7 @@
     <div id="log" class="log" aria-live="polite"></div>
   </div>
 
+  <script src="streaming-shared.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

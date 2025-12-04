@@ -129,11 +129,18 @@ const inputs = {
   MAX_RPS: document.getElementById('MAX_RPS'),
   BATCH_SIZE: document.getElementById('BATCH_SIZE'),
   BATCH_DELAY_MINUTES: document.getElementById('BATCH_DELAY_MINUTES'),
-  BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE')
+  BASE_TEMPLATE: document.getElementById('BASE_TEMPLATE'),
+  VERBOSE_PATH: document.getElementById('VERBOSE_PATH')
 };
 
 const pickStartBtn = document.getElementById('pickStartBtn');
 const pickEndBtn = document.getElementById('pickEndBtn');
+const verbosePathRow = document.getElementById('verbosePathRow');
+const verbosePathPreview = document.getElementById('verbosePathPreview');
+const openVerboseMonitorBtn = document.getElementById('openVerboseMonitorBtn');
+const openVerbosePngBtn = document.getElementById('openVerbosePngBtn');
+let popupPickerSessionId = null;
+let popupPickerTimeoutRef = null;
 const SETTINGS_KEY = 'pxf_settings';
 const RUN_STATE_KEY = '__PXF_RUNNING__';
 const STOP_FLAG_KEY = '__PIXEL_FETCHER_STOP__';
@@ -215,6 +222,10 @@ function log(type, text, extra) {
       p.textContent = `[${time}] ${text}` + (extra ? ` ${JSON.stringify(extra)}` : '');
       logEl.appendChild(p);
       logEl.scrollTop = logEl.scrollHeight;
+      const MAX_LOG_LINES = 300;
+      while (logEl.childNodes.length > MAX_LOG_LINES) {
+        logEl.removeChild(logEl.firstChild);
+      }
     }
   } catch (e) { /* ignore */ }
   if (type === 'error') console.error(text, extra || '');
@@ -229,6 +240,7 @@ function setRunningUI(isRunning) {
 
 function collectSettingsFromUI() {
   try {
+    const verbosePath = (inputs.VERBOSE_PATH?.value || '').trim();
     return {
       startBlockX: Number(inputs.startBlockX?.value || 0),
       startBlockY: Number(inputs.startBlockY?.value || 0),
@@ -244,7 +256,9 @@ function collectSettingsFromUI() {
       MAX_RPS: Number(inputs.MAX_RPS?.value || 6),
       BATCH_SIZE: Math.max(1, Number(inputs.BATCH_SIZE?.value || 10)),
       BATCH_DELAY_MINUTES: Math.max(0, Number(inputs.BATCH_DELAY_MINUTES?.value || 0.045)),
-      BASE_TEMPLATE: (inputs.BASE_TEMPLATE?.value || '').trim()
+      BASE_TEMPLATE: (inputs.BASE_TEMPLATE?.value || '').trim(),
+      VERBOSE_MODE: !!verbosePath,
+      VERBOSE_PATH: verbosePath
     };
   } catch (e) {
     console.warn('[POPUP] collectSettingsFromUI error', e);
@@ -252,7 +266,8 @@ function collectSettingsFromUI() {
       startBlockX: 0, startBlockY: 0, startX: 0, startY: 0,
       endBlockX: 0, endBlockY: 0, endX: 0, endY: 0,
       stepX: 1, stepY: 1, CONCURRENCY: 4, MAX_RPS: 6,
-      BATCH_SIZE: 10, BATCH_DELAY_MINUTES: 0.045, BASE_TEMPLATE: ''
+      BATCH_SIZE: 10, BATCH_DELAY_MINUTES: 0.045, BASE_TEMPLATE: '',
+      VERBOSE_MODE: false, VERBOSE_PATH: ''
     };
   }
 }
@@ -288,11 +303,93 @@ async function saveSettings() {
 async function loadSettings() {
   try {
     const cfg = await api.storageGet(SETTINGS_KEY);
-    if (cfg) Object.keys(inputs).forEach(k => { if (cfg[k] != null && inputs[k]) inputs[k].value = String(cfg[k]); });
+    if (cfg) {
+      Object.keys(inputs).forEach(k => {
+        const el = inputs[k];
+        if (!el || cfg[k] == null) return;
+        if (el.type === 'checkbox') el.checked = !!cfg[k];
+        else el.value = String(cfg[k]);
+      });
+    }
+    refreshVerbosePathPreview();
   } catch (e) { console.warn('[POPUP] loadSettings error', e); }
 }
 
 Object.values(inputs).forEach(el => { if (!el) return; el.addEventListener('input', scheduleSaveSettings); });
+if (inputs.VERBOSE_PATH) {
+  inputs.VERBOSE_PATH.addEventListener('input', refreshVerbosePathPreview);
+}
+
+function clearPopupPickerSession() {
+  if (popupPickerTimeoutRef) {
+    clearTimeout(popupPickerTimeoutRef);
+    popupPickerTimeoutRef = null;
+  }
+  popupPickerSessionId = null;
+  if (openVerboseMonitorBtn) openVerboseMonitorBtn.disabled = false;
+}
+
+if (openVerboseMonitorBtn) {
+  openVerboseMonitorBtn.addEventListener('click', () => {
+    if (openVerboseMonitorBtn.disabled) return;
+    popupPickerSessionId = `popup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    openVerboseMonitorBtn.disabled = true;
+    log('info', '正在打开 verbose 监控窗口，请在弹出的窗口中完成授权', { sessionId: popupPickerSessionId });
+    popupPickerTimeoutRef = setTimeout(() => {
+      if (!popupPickerSessionId) return;
+      log('warn', '监控窗口似乎没有响应，请重试。', { sessionId: popupPickerSessionId });
+      clearPopupPickerSession();
+    }, 120000);
+    chrome.runtime.sendMessage({ type: 'open-stream-picker', sessionId: popupPickerSessionId }, resp => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr || !resp || !resp.ok) {
+        const errMsg = lastErr ? (lastErr.message || 'runtime-error') : (resp && resp.error ? resp.error : 'failed');
+        log('error', '无法打开监控窗口，请确认扩展权限', { error: errMsg });
+        clearPopupPickerSession();
+        return;
+      }
+      log('info', '监控窗口已弹出，请保持其打开状态');
+    });
+  });
+}
+
+if (openVerbosePngBtn) {
+  openVerbosePngBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'open-verbose-png-window' }, resp => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr || (resp && resp.ok === false)) {
+        console.warn('[POPUP] 打开 verbose 转 PNG 弹窗失败', lastErr ? lastErr.message : (resp && resp.error));
+      }
+    });
+  });
+}
+
+if (chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== 'stream-picker-result') return;
+    if (!popupPickerSessionId || msg.sessionId !== popupPickerSessionId) return;
+    clearPopupPickerSession();
+    if (msg.status === 'success') {
+      if (inputs.VERBOSE_PATH) inputs.VERBOSE_PATH.value = msg.label || '';
+      refreshVerbosePathPreview();
+      scheduleSaveSettings();
+      log('info', '已打开 verbose 监控窗口', { target: msg.label, via: msg.via, streaming: !!msg.streaming });
+      if (!msg.streaming) {
+        log('warn', '当前环境未授予文件句柄，仅记录路径描述');
+      }
+    } else if (msg.status === 'error') {
+      log('error', '监控窗口授权失败', { error: msg.error || 'unknown' });
+    } else {
+      log('info', '已取消 verbose 监控窗口授权');
+    }
+  });
+}
+
+function refreshVerbosePathPreview() {
+  if (!verbosePathPreview) return;
+  const val = (inputs.VERBOSE_PATH?.value || '').trim();
+  verbosePathPreview.textContent = val || '未选择';
+}
 if (clearBtn) clearBtn.addEventListener('click', () => { if (logEl) logEl.innerHTML = ''; });
 
 /* Helper: ensure content script is present and send a message; inject main.js if necessary */
@@ -510,7 +607,18 @@ if (startBtn) startBtn.addEventListener('click', async () => {
   await saveSettings();
   const cfg = collectSettingsFromUI();
   const estimated = estimateCountFromCfg(cfg);
-  log('info', 'Starting job via background', { summary: `blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`, estimatedCount: estimated });
+  const verboseEnabled = !!cfg.VERBOSE_MODE;
+  const verbosePathSet = !!(cfg.VERBOSE_PATH && cfg.VERBOSE_PATH.length);
+  if (verboseEnabled && !verbosePathSet) {
+    log('warn', 'Verbose 模式已启用，但尚未选择保存路径；当前将回退为浏览器下载（TODO: File System Access 写入）');
+  }
+  const summaryPayload = {
+    summary: `blocks ${cfg.startBlockX},${cfg.startBlockY} -> ${cfg.endBlockX},${cfg.endBlockY}`,
+    estimatedCount: estimated,
+    verboseEnabled,
+    verbosePathSet
+  };
+  log('info', 'Starting job via background', summaryPayload);
 
   try { console.log('[POPUP] sending start cfg:', cfg); } catch (e) {}
 
